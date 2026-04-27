@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 const menuItems = [
@@ -8,6 +9,16 @@ const menuItems = [
 ];
 
 export default function HomeScreen() {
+  const router = useRouter();
+
+  const handlePress = (key: string) => {
+    if (key === 'discover') {
+      router.push('/discover');
+    } else if (key === 'observatory') {
+      router.push('/observatory');
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <Text style={styles.title}>Biodiversidad Guayana</Text>
@@ -24,7 +35,7 @@ export default function HomeScreen() {
             accessible
             accessibilityRole="menuitem"
             accessibilityLabel={item.label}
-            onPress={() => null}
+            onPress={() => handlePress(item.key)}
           >
             <Text style={styles.menuItemText}>{item.label}</Text>
           </Pressable>
