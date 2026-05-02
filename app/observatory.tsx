@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -9,42 +9,136 @@ import {
   Modal, 
   TextInput, 
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  ActivityIndicator
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useRouter } from 'expo-router';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { supabase } from '../lib/supabase';
 
 export default function ObservatoryScreen() {
   const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [imageUri, setImageUri] = useState<string | null>(null);
+  const [location, setLocation] = useState<Location.LocationObject | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  // Datos simulados de la comunidad
-  const [posts, setPosts] = useState([
-    {
-      id: '1',
-      title: 'Avistamiento de Jaguar',
-      description: 'Se avistó un jaguar cruzando el sendero principal cerca del río en la zona norte del parque esta mañana.',
-      time: 'Hace 2 horas',
-    },
-    {
-      id: '2',
-      title: 'Alerta: Conato de incendio',
-      description: 'Por favor evitar la ruta este, hay un pequeño reporte de humo que los guardabosques ya están revisando.',
-      time: 'Hace 5 horas',
-    },
-    {
-      id: '3',
-      title: 'Nueva especie de orquídea',
-      description: 'El equipo de botánica acaba de catalogar una nueva orquídea en las zonas húmedas del sur.',
-      time: 'Hace 1 día',
+  // Datos reales de la comunidad (vienen de Supabase)
+  const [posts, setPosts] = useState<any[]>([]);
+
+  const fetchPinesDelMapa = async () => {
+    try {
+      // Coordenadas amplias simulando que el usuario está viendo el mapa de Venezuela
+      const { data, error } = await supabase.rpc('get_registros_mapa', {
+        min_lat: 0.0,   // Sur
+        min_lng: -74.0, // Oeste
+        max_lat: 13.0,  // Norte
+        max_lng: -58.0  // Este
+      });
+
+      if (error) throw error;
+
+      if (data) {
+        // Mapeamos lo que devuelve la API a la estructura que usa tu UI
+        const posteosReales = data.map((item: any) => ({
+          id: item.id,
+          title: item.nombre_tradicional,
+          description: item.descripcion,
+          time: 'Capturado en zona', // Lo ideal es sacar la fecha de la BD luego
+        }));
+        setPosts(posteosReales);
+      }
+    } catch (error) {
+      console.error("Error trayendo datos del mapa:", error);
     }
-  ]);
+  };
 
-  const handlePost = () => {
-    if (newTitle.trim() && newDescription.trim()) {
+  // Ejecutamos la búsqueda apenas el usuario entra a la pantalla
+  useEffect(() => {
+    fetchPinesDelMapa();
+  }, []);
+
+  const handleAttachEvidence = async () => {
+    try {
+      const { status: mediaStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (mediaStatus !== 'granted') {
+        alert('Se necesitan permisos para acceder a la galería.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.5,
+      });
+
+      if (!result.canceled) {
+        setImageUri(result.assets[0].uri);
+
+        const { status: locStatus } = await Location.requestForegroundPermissionsAsync();
+        if (locStatus !== 'granted') {
+          alert('Se necesitan permisos de ubicación para registrar el avistamiento.');
+          return;
+        }
+        
+        const loc = await Location.getCurrentPositionAsync({});
+        setLocation(loc);
+      }
+    } catch (error) {
+      console.error('Error con hardware:', error);
+      alert('Hubo un error al adjuntar evidencia.');
+    }
+  };
+
+  const handlePost = async () => {
+    if (!newTitle.trim() || !newDescription.trim() || !imageUri || !location) {
+      alert("Completá todos los campos, adjuntá la evidencia y asegurate de tener señal GPS.");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) throw new Error("Tenés que estar autenticado para registrar una especie.");
+
+      const response = await fetch(imageUri);
+      const arrayBuffer = await response.arrayBuffer();
+      
+      const fileExt = imageUri.split('.').pop() || 'jpg';
+      const fileName = `${user.id}_${Date.now()}.${fileExt}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('multimedia_especies')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${fileExt === 'png' ? 'png' : 'jpeg'}`,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('multimedia_especies')
+        .getPublicUrl(uploadData.path);
+
+      const { error: dbError } = await supabase
+        .from('registros')
+        .insert({
+          usuario_id: user.id,
+          nombre_tradicional: newTitle,
+          descripcion: newDescription,
+          media_url: publicUrl,
+          tipo_media: 'imagen',
+          latitud: location.coords.latitude,
+          longitud: location.coords.longitude,
+        });
+
+      if (dbError) throw dbError;
+
       const newPost = {
         id: Date.now().toString(),
         title: newTitle,
@@ -52,9 +146,18 @@ export default function ObservatoryScreen() {
         time: 'Justo ahora',
       };
       setPosts([newPost, ...posts]);
+
       setNewTitle('');
       setNewDescription('');
+      setImageUri(null);
+      setLocation(null);
       setModalVisible(false);
+      
+    } catch (error: any) {
+      console.error('Error en handlePost:', error);
+      alert(error.message || 'Hubo un error al publicar. Revisá tu conexión.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -146,12 +249,36 @@ export default function ObservatoryScreen() {
               onChangeText={setNewDescription}
             />
             
+            <TouchableOpacity style={styles.imageUploadBtn} onPress={handleAttachEvidence}>
+              {imageUri ? (
+                <Image source={{ uri: imageUri }} style={styles.previewImage} />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={32} color="#004d40" />
+                  <Text style={styles.imageUploadText}>Adjuntar Evidencia</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            {location && (
+              <View style={styles.gpsIndicator}>
+                <Ionicons name="location" size={16} color="#2e7d32" />
+                <Text style={styles.locationText}>
+                  Coordenadas capturadas: {location.coords.latitude.toFixed(4)}, {location.coords.longitude.toFixed(4)}
+                </Text>
+              </View>
+            )}
+            
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)}>
+              <TouchableOpacity style={styles.cancelButton} onPress={() => setModalVisible(false)} disabled={loading}>
                 <Text style={styles.cancelButtonText}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.submitButton} onPress={handlePost}>
-                <Text style={styles.submitButtonText}>Publicar</Text>
+              <TouchableOpacity style={styles.submitButton} onPress={handlePost} disabled={loading}>
+                {loading ? (
+                  <ActivityIndicator color="#2e7d32" />
+                ) : (
+                  <Text style={styles.submitButtonText}>Publicar</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -354,5 +481,45 @@ const styles = StyleSheet.create({
     color: '#2e7d32',
     fontWeight: '600',
     fontSize: 16,
+  },
+  imageUploadBtn: {
+    height: 140,
+    backgroundColor: '#e0f2f1',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#80cbc4',
+    borderStyle: 'dashed',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  imageUploadText: {
+    color: '#004d40',
+    fontWeight: '600',
+    fontSize: 16,
+    marginTop: 8,
+  },
+  gpsIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e8f5e9',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginBottom: 24,
+    gap: 6,
+  },
+  locationText: {
+    fontSize: 13,
+    color: '#2e7d32',
+    fontWeight: '600',
   },
 });
