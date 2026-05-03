@@ -3,20 +3,13 @@ import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
+import { useRouter } from 'expo-router';
+
 export default function Scanner() {
-  const [imageUri, setImageUri] = useState<string | null>(null);
+  const router = useRouter();
 
-  const handleUpload = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setImageUri(result.assets[0].uri);
-      // Próximo paso: Enviar a Cloud AI para procesar
-    }
+  const handleUpload = () => {
+    router.push('/create-record');
   };
 
   return (
@@ -24,14 +17,10 @@ export default function Scanner() {
       <Text style={styles.title}>Modo Laboratorio (PC)</Text>
       <Text style={styles.subtitle}>Sube la foto desde tu PC para que nuestra IA en la nube analice la especie.</Text>
       
-      {imageUri ? (
-        <Image source={{ uri: imageUri }} style={styles.preview} />
-      ) : (
-        <TouchableOpacity style={styles.uploadBtn} onPress={handleUpload}>
-          <Ionicons name="cloud-upload-outline" size={40} color="#004d40" />
-          <Text style={styles.uploadText}>Cargar Archivo</Text>
-        </TouchableOpacity>
-      )}
+      <TouchableOpacity style={styles.uploadBtn} onPress={handleUpload}>
+        <Ionicons name="cloud-upload-outline" size={40} color="#004d40" />
+        <Text style={styles.uploadText}>Cargar Registro</Text>
+      </TouchableOpacity>
     </View>
   );
 }

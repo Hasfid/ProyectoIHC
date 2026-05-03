@@ -9,7 +9,10 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Necesitamos acceso a la cámara para identificar la biodiversidad."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +22,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ],
+      "package": "com.anonymous.pruebaIHC"
     },
     "web": {
       "output": "static",
@@ -40,13 +47,11 @@
         }
       ],
       [
-        "react-native-vision-camera",
+        "expo-camera",
         {
-          "cameraPermissionText": "Necesitamos acceso a la cámara para identificar la biodiversidad.",
-          "enableCodeScanner": false
+          "cameraPermission": "Necesitamos acceso a la cámara para identificar la biodiversidad."
         }
-      ],
-      "react-native-fast-tflite"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

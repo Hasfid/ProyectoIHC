@@ -16,6 +16,8 @@ export default function HomeScreen() {
       router.push('/discover');
     } else if (key === 'observatory') {
       router.push('/observatory');
+    } else if (key === 'scanner') {
+      router.push('/scanner');
     }
   };
 
