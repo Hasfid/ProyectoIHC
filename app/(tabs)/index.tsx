@@ -1,94 +1,70 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React from 'react';
+import { StyleSheet, View, TouchableOpacity, Dimensions } from 'react-native';
+import { BlurView } from 'expo-blur';
+import { Ionicons } from '@expo/vector-icons';
+import { Tabs, useRouter } from 'expo-router';
+import Map from '../../components/Map';
 
-const menuItems = [
-  { key: 'discover', label: 'Descubrir' },
-  { key: 'observatory', label: 'Observatorio' },
-  { key: 'scanner', label: 'Escaner' },
-  { key: 'profile', label: 'Perfil' },
-];
-
-import { useRouter } from 'expo-router';
-
-export default function HomeScreen() {
+export default function DiscoverScreen() {
   const router = useRouter();
 
-  const handlePress = (key: string) => {
-    if (key === 'discover') {
-      router.push('/discover');
-    } else if (key === 'observatory') {
-      router.push('/observatory');
-    } else if (key === 'scanner') {
-      router.push('/scanner');
-    }
-  };
-
   return (
-    <View style={styles.screen}>
-      <Text style={styles.title}>Biodiversidad Guayana</Text>
-      <Text style={styles.subtitle}>Navega con facilidad en un diseño limpio.</Text>
+    <View style={styles.container}>
 
-      <View style={styles.menu} accessible accessibilityRole="menu">
-        {menuItems.map((item) => (
-          <Pressable
-            key={item.key}
-            style={({ pressed }) => [
-              styles.menuItem,
-              pressed && styles.menuItemPressed,
-            ]}
-            accessible
-            accessibilityRole="menuitem"
-            accessibilityLabel={item.label}
-            onPress={() => handlePress(item.key)}
-          >
-            <Text style={styles.menuItemText}>{item.label}</Text>
-          </Pressable>
-        ))}
+      
+      <Map />
+
+      <View style={styles.floatingButtonContainer}>
+        <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
+          <BlurView intensity={90} tint="light" style={styles.blurContainer}>
+            <Ionicons name="chatbubbles" size={28} color="#004d40" style={styles.icon} />
+          </BlurView>
+        </TouchableOpacity>
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 48,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: '#fff',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#111',
-    marginBottom: 8,
+  backButton: {
+    marginLeft: 8,
+    borderRadius: 20,
+    overflow: 'hidden',
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#555',
-    marginBottom: 24,
+  backButtonBlur: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
-  menu: {
-    gap: 16,
-  },
-  menuItem: {
-    backgroundColor: '#ffffff',
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+  floatingButtonContainer: {
+    position: 'absolute',
+    bottom: 40,
+    right: 24,
+    borderRadius: 30,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  menuItemPressed: {
-    borderColor: '#bdbdbd',
-    backgroundColor: '#f2f2f2',
+  floatingButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
   },
-  menuItemText: {
-    fontSize: 18,
-    color: '#111',
-    fontWeight: '600',
+  blurContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
   },
+  icon: {
+    transform: [{ rotate: '-15deg' }, { translateX: -2 }, { translateY: 2 }],
+  }
 });
