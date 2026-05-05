@@ -1,19 +1,113 @@
 import React, { useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity,
+  ActivityIndicator, Alert, Platform, TextInput, Image
+} from 'react-native';
+import { BlurView } from 'expo-blur';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import { supabase } from '../lib/supabase';
+import { uploadMediaToSupabase } from '../lib/uploadMedia';
+import { identifySpecies } from '../lib/identifySpecies';
+
+type Phase = 'scanning' | 'capturing' | 'identifying' | 'preview' | 'uploading' | 'saving';
 
 export default function Scanner() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const router = useRouter();
-  const [detectedSpecies, setDetectedSpecies] = useState<any>(null);
+  const router    = useRouter();
+  const [phase, setPhase] = useState<Phase>('scanning');
 
+  // Nuevos estados para Pre-registro
+  const [previewData, setPreviewData] = useState<{ photoUri: string; aiResult: any } | null>(null);
+  const [userNote, setUserNote] = useState('');
+
+  // ── Handlers ─────────────────────────────────────────────────────────────
+  const processScan = async () => {
+    if (!cameraRef.current || phase !== 'scanning') return;
+
+    try {
+      setPhase('capturing');
+      const photo = await cameraRef.current.takePictureAsync({ quality: 0.8, base64: true });
+      if (!photo?.uri || !photo.base64) throw new Error('La cámara no devolvió imagen.');
+
+      setPhase('identifying');
+      const aiResult = await identifySpecies(photo.base64);
+
+      setPreviewData({ photoUri: photo.uri, aiResult });
+      setPhase('preview');
+    } catch (err: any) {
+      setPhase('scanning');
+      Alert.alert('Error', err?.message ?? 'Inténtalo de nuevo.', [{ text: 'OK' }]);
+    }
+  };
+
+  const confirmAndSave = async () => {
+    if (!previewData) return;
+
+    try {
+      setPhase('uploading');
+      const mediaUrl = await uploadMediaToSupabase(previewData.photoUri, 'image/jpeg');
+
+      setPhase('saving');
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Se requiere permiso de ubicación para registrar la especie.');
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const latitud = pos.coords.latitude;
+      const longitud = pos.coords.longitude;
+
+      let { data: { session } } = await supabase.auth.getSession();
+      let usuario_id = session?.user?.id;
+      
+      if (!session) {
+        const { error: anonErr } = await supabase.auth.signInAnonymously();
+        if (anonErr) {
+          console.warn('Inicio de sesión anónimo falló o está deshabilitado:', anonErr.message);
+        } else {
+          session = (await supabase.auth.getSession()).data.session;
+          usuario_id = session?.user?.id;
+        }
+      }
+
+      let registro = {
+        nombre_tradicional: previewData.aiResult.nombreTradicional,
+        nombre_cientifico: previewData.aiResult.nombreCientifico,
+        latitud: latitud,
+        longitud: longitud,
+        media_url: mediaUrl,
+        usuario_id: usuario_id,
+        tipo_media: 'imagen',
+        ia_certeza: previewData.aiResult.iaCerteza,
+        descripcion: userNote, // Usamos 'descripcion' como fallback
+      };
+
+      let { error } = await supabase.from('registros').insert([registro]);
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setPhase('scanning');
+      setPreviewData(null);
+      setUserNote('');
+      Alert.alert('¡Éxito!', 'El registro ha sido guardado correctamente.', [
+        { text: 'Ver mis hallazgos', onPress: () => router.replace('/(tabs)/records') }
+      ]);
+    } catch (err: any) {
+      setPhase('preview');
+      Alert.alert('Error', err?.message ?? 'Inténtalo de nuevo.', [{ text: 'OK' }]);
+    }
+  };
+
+  // ── Early returns ────────────────────────────────────────────────────────
   if (!permission) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.text}>Cargando permisos de cámara...</Text>
+        <ActivityIndicator color={neonGreen} size="large" />
+        <Text style={styles.text}>Cargando permisos...</Text>
       </View>
     );
   }
@@ -21,244 +115,219 @@ export default function Scanner() {
   if (!permission.granted) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.text}>Necesitamos tu permiso para usar la cámara</Text>
-        <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
-          <Text style={styles.permissionButtonText}>Otorgar permiso</Text>
+        <Ionicons name="camera-outline" size={64} color={neonGreen} />
+        <Text style={styles.text}>Se necesita permiso para usar la cámara</Text>
+        <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+          <Text style={styles.permissionBtnText}>Otorgar permiso</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  const handleSimulateDetection = () => {
-    // Simulamos que al apuntar y hacer foco (tocar la pantalla), la IA detecta la especie
-    setDetectedSpecies({ id: '1', name: 'Jaguar', science: 'Panthera onca', match: '98%' });
-  };
+  const isBusy = phase !== 'scanning';
 
-  const handleCreateRecord = () => {
-    if (detectedSpecies) {
-      router.push({ pathname: '/create-record', params: { autoFill: 'true', speciesId: detectedSpecies.id } });
-    } else {
-      router.push('/create-record'); // Carga manual si aún no detectó
-    }
-  };
+  const statusLabel =
+    phase === 'capturing'   ? 'Capturando...' :
+    phase === 'identifying' ? 'IA analizando especie...' :
+    phase === 'uploading'   ? 'Subiendo a Supabase...' :
+    phase === 'saving'      ? 'Guardando en base de datos...' :
+    'Apunta y captura la especie';
 
-  const renderHUD = () => {
-    if (!detectedSpecies) {
-      return (
-        <View style={styles.scanningState} pointerEvents="none">
-          <Ionicons name="scan-outline" size={80} color="rgba(164, 255, 68, 0.5)" />
-          <Text style={styles.scanningText}>Toca la pantalla para enfocar y escanear</Text>
-        </View>
-      );
-    }
-    return (
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {/* Title Bar - Top Left */}
-        <View style={styles.hudTopLeft}>
-          <Text style={styles.hudTitle}>SISTEMA DE ANÁLISIS DE BIO-ESPÉCIES DE CAMPO - REGISTRO DE GUAYANA</Text>
-        </View>
-
-        {/* Center Reticle */}
-        <View style={styles.reticleContainer}>
-          <View style={[styles.reticleCorner, styles.reticleTL]} />
-          <View style={[styles.reticleCorner, styles.reticleTR]} />
-          <View style={[styles.reticleCorner, styles.reticleBL]} />
-          <View style={[styles.reticleCorner, styles.reticleBR]} />
-
-          {/* AI ID Box */}
-          <View style={styles.hudIdBox}>
-            <Text style={styles.hudIdText}>IDENTIFICACIÓN IA: ESCARABAJO FLORÍCOLA REY (Mecynorrhina torquata) (97.8%)</Text>
-          </View>
-
-          {/* Status Box */}
-          <View style={styles.hudStatusBox}>
-            <Text style={styles.hudLabel}>ESTADO:</Text>
-            <Text style={styles.hudValue}>ENDÉMICO (SELVA TROPICAL GUAYANESA) | VULNERABLE</Text>
-          </View>
-          
-          {/* Map Label */}
-          <View style={styles.hudMapBox}>
-            <Text style={styles.hudLabel}>RANGO DE HÁBITAT (SIG)</Text>
-          </View>
-        </View>
-
-        {/* Bottom Left Summary */}
-        <View style={styles.hudBottomLeft}>
-          <Text style={styles.hudTitle}>'RESUMEN DE REGISTRO'</Text>
-          <Text style={styles.hudSub}>ANÁLISIS DE ESPECIE</Text>
-        </View>
-
-        {/* Bottom Right Micro-data */}
-        <View style={styles.hudBottomRight}>
-          <Text style={styles.hudLabel}>MICRO-DATOS:</Text>
-          <Text style={styles.hudValue}>ELEVACIÓN 420m | HUMEDAD 78%</Text>
-        </View>
-
-        {/* Peripheral Grid lines */}
-        <View style={styles.gridLineHorizontal} />
-        <View style={styles.gridLineVertical} />
-      </View>
-    );
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      <CameraView 
-        style={StyleSheet.absoluteFill} 
-        facing="back" 
-        ref={cameraRef}
-      />
-      
-      {/* Capa para simular el auto-foco y detección al tocar la pantalla */}
-      <TouchableWithoutFeedback onPress={handleSimulateDetection}>
-        <View style={StyleSheet.absoluteFill} />
-      </TouchableWithoutFeedback>
-      
-      {renderHUD()}
+      {/* Cámara en vivo */}
+      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
-      <View style={styles.bottomOverlay}>
-        <TouchableOpacity style={styles.captureBtn} onPress={handleCreateRecord}>
-          <Ionicons name="scan-outline" size={40} color="#a4ff44" />
+      {/* HUD de Escaneo */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <View style={styles.hudTopLeft}>
+          <Text style={styles.hudTitle}>SISTEMA DE ANÁLISIS · GUAYANA BIODIVERSA</Text>
+        </View>
+
+        <View style={styles.reticleContainer}>
+          <View style={[styles.corner, styles.TL]} />
+          <View style={[styles.corner, styles.TR]} />
+          <View style={[styles.corner, styles.BL]} />
+          <View style={[styles.corner, styles.BR]} />
+          <View style={styles.idBox}>
+            <Text style={styles.idText}>MODO IDENTIFICACIÓN ACTIVO</Text>
+          </View>
+        </View>
+
+        <View style={styles.gridH} />
+        <View style={styles.gridV} />
+      </View>
+
+      {/* Modal / Vista Previa de Pre-registro */}
+      {phase === 'preview' && previewData && (
+        <View style={styles.previewContainer}>
+          <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
+          
+          <View style={styles.previewCard}>
+            <Image source={{ uri: previewData.photoUri }} style={styles.previewImage} />
+            <Text style={styles.previewTitle}>{previewData.aiResult.nombreTradicional}</Text>
+            {previewData.aiResult.nombreCientifico && (
+              <Text style={styles.previewSubtitle}>{previewData.aiResult.nombreCientifico}</Text>
+            )}
+
+            <TextInput
+              style={styles.previewInput}
+              placeholder="¿Alguna observación especial sobre este encuentro en la Guayana?"
+              placeholderTextColor="#888"
+              value={userNote}
+              onChangeText={setUserNote}
+              multiline
+            />
+
+            <TouchableOpacity style={styles.confirmBtn} onPress={confirmAndSave}>
+              <Text style={styles.confirmBtnText}>Confirmar y Registrar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.cancelBtn} 
+              onPress={() => {
+                setPhase('scanning');
+                setPreviewData(null);
+                setUserNote('');
+              }}
+            >
+              <Text style={styles.cancelBtnText}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Overlay de carga con la fase actual */}
+      {(isBusy && phase !== 'preview') && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color={neonGreen} />
+          <Text style={styles.loadingText}>{statusLabel}</Text>
+          {phase === 'identifying' && (
+            <Text style={{color: '#aaa', fontSize: 12, marginTop: -8}}>Consultando modelo Gemini Vision...</Text>
+          )}
+        </View>
+      )}
+
+      {/* Botón de captura */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.captureBtn, (isBusy && phase !== 'preview') && styles.captureBtnDisabled]}
+          onPress={processScan}
+          disabled={isBusy && phase !== 'preview'}
+        >
+          {(isBusy && phase !== 'preview')
+            ? <ActivityIndicator color={neonGreen} size="small" />
+            : <Ionicons name="camera" size={36} color={neonGreen} />
+          }
         </TouchableOpacity>
+        <Text style={styles.captureLabel}>{statusLabel}</Text>
       </View>
     </View>
   );
 }
 
 const neonGreen = '#a4ff44';
-const darkTrans = 'rgba(0, 0, 0, 0.4)';
+const glassBg   = 'rgba(0,0,0,0.48)';
 
 const styles = StyleSheet.create({
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#111' },
-  text: { color: '#fff', fontSize: 16 },
+  centered: { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32 },
+  text:     { color: '#ccc', fontSize: 16, textAlign: 'center' },
+  permissionBtn:     { marginTop: 8, paddingHorizontal: 28, paddingVertical: 12, backgroundColor: neonGreen, borderRadius: 10 },
+  permissionBtnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
   container: { flex: 1, backgroundColor: '#000' },
-  hudTopLeft: {
-    position: 'absolute',
-    top: 40,
-    left: 20,
-    borderLeftWidth: 2,
-    borderColor: neonGreen,
-    paddingLeft: 8,
-  },
-  hudTitle: { color: neonGreen, fontSize: 12, fontWeight: 'bold', letterSpacing: 1 },
-  hudSub: { color: '#fff', fontSize: 10, marginTop: 2 },
-  
-  reticleContainer: {
-    position: 'absolute',
-    top: '30%',
-    left: '15%',
-    width: '70%',
-    height: '40%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  reticleCorner: {
-    position: 'absolute',
-    width: 30,
-    height: 30,
-    borderColor: neonGreen,
-  },
-  reticleTL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
-  reticleTR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
-  reticleBL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
-  reticleBR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
-  
-  hudIdBox: {
-    position: 'absolute',
-    top: -40,
-    backgroundColor: darkTrans,
-    borderWidth: 1,
-    borderColor: neonGreen,
-    padding: 6,
-  },
-  hudIdText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
-  
-  hudStatusBox: {
-    position: 'absolute',
-    top: 20,
-    right: -80,
-    backgroundColor: darkTrans,
-    borderWidth: 1,
-    borderColor: neonGreen,
-    padding: 6,
-    width: 140,
-  },
-  hudMapBox: {
-    position: 'absolute',
-    bottom: 40,
-    right: -60,
-  },
-  hudLabel: { color: neonGreen, fontSize: 9, fontWeight: 'bold', marginBottom: 2 },
-  hudValue: { color: '#fff', fontSize: 9 },
 
-  hudBottomLeft: {
-    position: 'absolute',
-    bottom: 40,
-    left: 20,
-    borderLeftWidth: 2,
-    borderColor: neonGreen,
-    paddingLeft: 8,
-  },
-  hudBottomRight: {
-    position: 'absolute',
-    bottom: 40,
-    right: 20,
-    backgroundColor: darkTrans,
-    borderWidth: 1,
-    borderColor: neonGreen,
-    padding: 6,
-    width: 150,
-  },
-  
-  gridLineHorizontal: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
-    height: 1,
-    backgroundColor: 'rgba(164, 255, 68, 0.2)',
-  },
-  gridLineVertical: {
-    position: 'absolute',
-    top: 0,
-    bottom: 0,
-    right: '10%',
-    width: 1,
-    backgroundColor: 'rgba(164, 255, 68, 0.2)',
-  },
+  hudTopLeft: { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 40, left: 20, borderLeftWidth: 2, borderColor: neonGreen, paddingLeft: 8 },
+  hudTitle:   { color: neonGreen, fontSize: 9, fontWeight: 'bold', letterSpacing: 1.2 },
 
-  scanningState: {
+  reticleContainer: { position: 'absolute', top: '28%', left: '12%', width: '76%', height: '40%', justifyContent: 'center', alignItems: 'center' },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: neonGreen },
+  TL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
+  TR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
+  BL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
+  BR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
+  idBox:   { position: 'absolute', top: -36, backgroundColor: glassBg, borderWidth: 1, borderColor: neonGreen, padding: 6 },
+  idText:  { color: '#fff', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.4 },
+
+  gridH: { position: 'absolute', top: '50%', left: 0, right: 0, height: 1, backgroundColor: 'rgba(164,255,68,0.15)' },
+  gridV: { position: 'absolute', top: 0, bottom: 0, right: '10%', width: 1, backgroundColor: 'rgba(164,255,68,0.15)' },
+
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', gap: 18, zIndex: 10 },
+  loadingText:    { color: neonGreen, fontSize: 15, fontWeight: '700', letterSpacing: 1, textAlign: 'center' },
+
+  bottomBar:          { position: 'absolute', bottom: 44, left: 0, right: 0, alignItems: 'center', gap: 10, zIndex: 20 },
+  captureBtn:         { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: neonGreen },
+  captureBtnDisabled: { opacity: 0.4 },
+  captureLabel:       { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
+
+  previewContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
+    zIndex: 30,
+    padding: 20,
   },
-  scanningText: {
-    color: neonGreen,
+  previewCard: {
+    width: '100%',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(164,255,68,0.3)',
+    alignItems: 'center',
+  },
+  previewImage: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#a4ff44',
+  },
+  previewTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  previewSubtitle: {
+    color: '#a4ff44',
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  previewInput: {
+    width: '100%',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 12,
+    padding: 16,
+    color: '#fff',
+    fontSize: 15,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 24,
+  },
+  confirmBtn: {
+    backgroundColor: '#a4ff44',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  confirmBtnText: {
+    color: '#000',
     fontSize: 16,
     fontWeight: 'bold',
-    marginTop: 16,
-    textShadowColor: '#000',
-    textShadowOffset: { width: 1, height: 1 },
-    textShadowRadius: 4,
   },
-
-  bottomOverlay: { 
-    position: 'absolute', 
-    bottom: 40, 
-    left: 0,
-    right: 0,
-    alignItems: 'center', 
+  cancelBtn: {
+    paddingVertical: 10,
   },
-  captureBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: neonGreen,
+  cancelBtnText: {
+    color: '#ccc',
+    fontSize: 14,
   },
-  permissionButton: { marginTop: 20, padding: 10, backgroundColor: neonGreen, borderRadius: 8 },
-  permissionButtonText: { color: '#000', fontWeight: 'bold' }
 });

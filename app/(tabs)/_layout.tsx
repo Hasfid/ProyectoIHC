@@ -52,6 +52,13 @@ export default function TabLayout() {
         }}
       />
       <MaterialTopTabs.Screen
+        name="records"
+        options={{
+          title: 'Mis Registros',
+          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "library" : "library-outline"} size={24} color={color} />,
+        }}
+      />
+      <MaterialTopTabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
