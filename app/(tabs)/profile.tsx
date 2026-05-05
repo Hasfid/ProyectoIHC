@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useState, useEffect } from 'react';
 import {
   Image,
   ScrollView,
@@ -8,100 +8,240 @@ import {
   Text,
   TouchableOpacity,
   View,
-  Dimensions
+  Dimensions,
+  ActivityIndicator,
+  Modal,
+  TextInput,
+  Alert
 } from 'react-native';
+import { supabase } from '../../lib/supabase';
+import * as ImagePicker from 'expo-image-picker';
+import { uploadMediaToSupabase } from '../../lib/uploadMedia';
 
 const { width } = Dimensions.get('window');
-
-// Mock data
-const mockUser = {
-  username: 'carlos_botanico',
-  fullName: 'Carlos Mendoza',
-  description: 'Apasionado por la flora de la Guayana. Botánico y fotógrafo aficionado. 🌱📸',
-  followers: 1240,
-  following: 356,
-  recordsCount: 42,
-  profileImage: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=200&h=200',
-};
-
-const mockRecords = [
-  { id: '1', image: 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?auto=format&fit=crop&q=80&w=400&h=400' },
-  { id: '2', image: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&q=80&w=400&h=400' },
-  { id: '3', image: 'https://images.unsplash.com/photo-1456926631375-92c8ce872def?auto=format&fit=crop&q=80&w=400&h=400' },
-  { id: '4', image: 'https://images.unsplash.com/photo-1550853024-fae8cd4be47f?auto=format&fit=crop&q=80&w=400&h=400' },
-  { id: '5', image: 'https://images.unsplash.com/photo-1472214103451-9374bd1c798e?auto=format&fit=crop&q=80&w=400&h=400' },
-  { id: '6', image: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?auto=format&fit=crop&q=80&w=400&h=400' },
-];
-
-const mockCommunityPosts = [
-  {
-    id: '1',
-    title: 'Avistamiento de Jaguar',
-    description: 'Se avistó un jaguar cruzando el sendero principal cerca del río en la zona norte del parque esta mañana.',
-    time: 'Hace 2 horas',
-  },
-  {
-    id: '2',
-    title: 'Nueva especie de orquídea',
-    description: 'El equipo de botánica acaba de catalogar una nueva orquídea en las zonas húmedas del sur.',
-    time: 'Hace 1 día',
-  }
-];
 
 type Tab = 'records' | 'community';
 
 export default function ProfileScreen() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('records');
+  const [session, setSession] = useState<any>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Estados de edición
+  const [isEditing, setIsEditing] = useState(false);
+  const [editUsername, setEditUsername] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editPhoto, setEditPhoto] = useState<string | null>(null);
+  const [usernameError, setUsernameError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const [stats, setStats] = useState({ followers: 0, following: 0, records: 0 });
+
+  useEffect(() => {
+    fetchSessionAndProfile();
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session) {
+        fetchProfile(session.user.id);
+        fetchStats(session.user.id);
+      } else {
+        setProfile(null);
+        setStats({ followers: 0, following: 0, records: 0 });
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchSessionAndProfile = async () => {
+    setLoading(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    setSession(session);
+    
+    if (session?.user?.id) {
+      await fetchProfile(session.user.id);
+      await fetchStats(session.user.id);
+    }
+    setLoading(false);
+  };
+
+  const fetchProfile = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('perfiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+      
+    if (data && !error) {
+      setProfile(data);
+    }
+  };
+
+  const fetchStats = async (userId: string) => {
+    // Contar seguidores (cuántos siguen a este usuario)
+    const { count: followersCount } = await supabase
+      .from('seguidores')
+      .select('*', { count: 'exact', head: true })
+      .eq('seguido_id', userId);
+
+    // Contar seguidos (a cuántos sigue este usuario)
+    const { count: followingCount } = await supabase
+      .from('seguidores')
+      .select('*', { count: 'exact', head: true })
+      .eq('seguidor_id', userId);
+
+    setStats(prev => ({
+      ...prev,
+      followers: followersCount || 0,
+      following: followingCount || 0
+    }));
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  };
+
+  // --- Funciones de Edición ---
+  const openEditModal = () => {
+    setEditUsername(profile?.username || profile?.nombre || '');
+    setEditDescription(profile?.descripcion || '');
+    setEditPhoto(profile?.foto_perfil || null);
+    setUsernameError('');
+    setIsEditing(true);
+  };
+
+  const pickImage = async () => {
+    let result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+
+    if (!result.canceled) {
+      setEditPhoto(result.assets[0].uri);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!editUsername) {
+      setUsernameError('El nombre de usuario no puede estar vacío');
+      return;
+    }
+
+    setSaving(true);
+    setUsernameError('');
+
+    try {
+      const currentUsername = profile?.username || profile?.nombre;
+      if (editUsername.toLowerCase().trim() !== currentUsername?.toLowerCase().trim()) {
+        const { data: existingUser } = await supabase
+          .from('perfiles')
+          .select('id')
+          .eq('username', editUsername.toLowerCase().trim())
+          .single();
+
+        if (existingUser && existingUser.id !== session?.user.id) {
+          setUsernameError('Ese nombre de usuario ya está en uso');
+          setSaving(false);
+          return;
+        }
+      }
+
+      let finalPhotoUrl = profile?.foto_perfil;
+      if (editPhoto && editPhoto !== profile?.foto_perfil) {
+        finalPhotoUrl = await uploadMediaToSupabase(editPhoto, 'image/jpeg');
+      }
+
+      const { error } = await supabase
+        .from('perfiles')
+        .update({
+          username: editUsername.toLowerCase().trim(),
+          nombre: editUsername, 
+          descripcion: editDescription,
+          foto_perfil: finalPhotoUrl
+        })
+        .eq('id', session?.user.id);
+
+      if (error) throw error;
+
+      setProfile({
+        ...profile,
+        username: editUsername.toLowerCase().trim(),
+        nombre: editUsername,
+        descripcion: editDescription,
+        foto_perfil: finalPhotoUrl
+      });
+
+      setIsEditing(false);
+    } catch (err) {
+      Alert.alert('Error', 'No se pudo actualizar el perfil');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading || !profile) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#2e7d32" />
+      </View>
+    );
+  }
+
+  const isDefaultUnsplash = profile.foto_perfil?.includes('images.unsplash.com');
+  const hasPhoto = profile.foto_perfil && !isDefaultUnsplash;
 
   return (
     <View style={styles.container}>
       <View style={styles.customHeader}>
-        <Text style={styles.customHeaderTitle}>{mockUser.username}</Text>
-        <TouchableOpacity style={styles.menuButton}>
-          <Ionicons name="menu-outline" size={28} color="#111" />
+        <Text style={styles.customHeaderTitle}>Perfil</Text>
+        <TouchableOpacity style={styles.menuButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={28} color="#111" />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        
-        {/* Profile Header (Instagram style) */}
         <View style={styles.headerContainer}>
-          <Image source={{ uri: mockUser.profileImage }} style={styles.profileImage} />
+          {hasPhoto ? (
+            <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
+          ) : (
+            <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+              <Ionicons name="person" size={50} color="#ccc" />
+            </View>
+          )}
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{mockUser.recordsCount}</Text>
+              <Text style={styles.statNumber}>{stats.records}</Text>
               <Text style={styles.statLabel}>Registros</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{mockUser.followers}</Text>
+              <Text style={styles.statNumber}>{stats.followers}</Text>
               <Text style={styles.statLabel}>Seguidores</Text>
             </View>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{mockUser.following}</Text>
+              <Text style={styles.statNumber}>{stats.following}</Text>
               <Text style={styles.statLabel}>Seguidos</Text>
             </View>
           </View>
         </View>
 
-        {/* Profile Info */}
         <View style={styles.infoContainer}>
-          <Text style={styles.fullName}>{mockUser.fullName}</Text>
-          <Text style={styles.description}>{mockUser.description}</Text>
+          <Text style={styles.fullName}>{profile.username || profile.nombre}</Text>
+          <Text style={styles.description}>{profile.descripcion || 'Sin descripción.'}</Text>
         </View>
 
-        {/* Actions */}
         <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.editButton}>
+          <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
             <Text style={styles.editButtonText}>Editar perfil</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.shareButton}>
-            <Text style={styles.shareButtonText}>Compartir perfil</Text>
-          </TouchableOpacity>
         </View>
 
-        {/* Tabs */}
         <View style={styles.tabsContainer}>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'records' && styles.activeTab]} 
@@ -109,215 +249,121 @@ export default function ProfileScreen() {
           >
             <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? '#111' : '#888'} />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.tab, activeTab === 'community' && styles.activeTab]} 
-            onPress={() => setActiveTab('community')}
-          >
-            <Ionicons name="list-outline" size={26} color={activeTab === 'community' ? '#111' : '#888'} />
-          </TouchableOpacity>
         </View>
 
-        {/* Tab Content */}
-        {activeTab === 'records' ? (
-          <View style={styles.gridContainer}>
-            {mockRecords.map((record) => (
-              <TouchableOpacity key={record.id} style={styles.gridItem}>
-                <Image source={{ uri: record.image }} style={styles.gridImage} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.communityContainer}>
-            {mockCommunityPosts.map((post) => (
-              <View key={post.id} style={styles.postCard}>
-                <Text style={styles.postTitle}>{post.title}</Text>
-                <Text style={styles.postDescription}>{post.description}</Text>
-                <Text style={styles.postTime}>{post.time}</Text>
-              </View>
-            ))}
+        {activeTab === 'records' && (
+          <View style={[styles.gridContainer, { justifyContent: 'center', padding: 20 }]}>
+             <Text style={{color: '#999'}}>Aún no hay fotos.</Text>
           </View>
         )}
 
-        <View style={{ height: 80 }} /> {/* Bottom padding */}
+        <View style={{ height: 80 }} />
       </ScrollView>
+
+      {/* MODAL DE EDICIÓN */}
+      <Modal visible={isEditing} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setIsEditing(false)}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setIsEditing(false)} disabled={saving}>
+              <Text style={styles.modalCancelText}>Cancelar</Text>
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>Editar Perfil</Text>
+            <TouchableOpacity onPress={saveProfile} disabled={saving}>
+              {saving ? <ActivityIndicator size="small" color="#2e7d32" /> : <Text style={styles.modalSaveText}>Guardar</Text>}
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            {/* Editar foto */}
+            <View style={styles.editPhotoContainer}>
+              {editPhoto && !editPhoto.includes('images.unsplash.com') ? (
+                <Image source={{ uri: editPhoto }} style={styles.editProfileImage} />
+              ) : (
+                <View style={[styles.editProfileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+                  <Ionicons name="person" size={50} color="#ccc" />
+                </View>
+              )}
+              <TouchableOpacity onPress={pickImage} style={styles.changePhotoButton}>
+                <Text style={styles.changePhotoText}>Cambiar foto</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Editar Username */}
+            <Text style={styles.label}>Nombre de usuario</Text>
+            <TextInput
+              style={[styles.input, usernameError ? styles.inputError : null]}
+              value={editUsername}
+              onChangeText={setEditUsername}
+              autoCapitalize="none"
+              editable={!saving}
+            />
+            {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
+
+            {/* Editar Descripción */}
+            <Text style={styles.label}>Descripción</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={editDescription}
+              onChangeText={setEditDescription}
+              multiline
+              numberOfLines={4}
+              placeholder="Cuéntanos sobre ti..."
+              editable={!saving}
+            />
+          </ScrollView>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-  },
+  container: { flex: 1, backgroundColor: '#ffffff' },
   customHeader: {
-    paddingTop: 60,
-    paddingHorizontal: 20,
-    paddingBottom: 10,
-    backgroundColor: 'transparent',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    paddingTop: 60, paddingHorizontal: 20, paddingBottom: 10,
+    backgroundColor: 'transparent', position: 'absolute', top: 0, left: 0, right: 0,
+    zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
-  customHeaderTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#111',
+  customHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: '#111' },
+  scrollContent: { paddingTop: 100 },
+  menuButton: { padding: 8 },
+  headerContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
+  profileImage: { width: 86, height: 86, borderRadius: 43, borderWidth: 1, borderColor: '#eaeaea' },
+  statsContainer: { flex: 1, flexDirection: 'row', justifyContent: 'space-around', marginLeft: 16 },
+  statItem: { alignItems: 'center' },
+  statNumber: { fontSize: 18, fontWeight: 'bold', color: '#111' },
+  statLabel: { fontSize: 13, color: '#444', marginTop: 2 },
+  infoContainer: { paddingHorizontal: 20, marginBottom: 16 },
+  fullName: { fontSize: 15, fontWeight: '600', color: '#111', marginBottom: 4 },
+  description: { fontSize: 14, color: '#333', lineHeight: 20 },
+  actionsContainer: { flexDirection: 'row', paddingHorizontal: 20, gap: 8, marginBottom: 20 },
+  editButton: { flex: 1, backgroundColor: '#f2f2f2', paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
+  editButtonText: { fontSize: 14, fontWeight: '600', color: '#111' },
+  tabsContainer: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#eaeaea' },
+  tab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'transparent' },
+  activeTab: { borderBottomColor: '#111' },
+  gridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  
+  // Modal Styles
+  modalContainer: { flex: 1, backgroundColor: '#fff' },
+  modalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    padding: 16, borderBottomWidth: 1, borderBottomColor: '#eaeaea'
   },
-  scrollContent: {
-    paddingTop: 100, // Space for transparent header
+  modalTitle: { fontSize: 18, fontWeight: 'bold' },
+  modalCancelText: { fontSize: 16, color: '#555' },
+  modalSaveText: { fontSize: 16, color: '#2e7d32', fontWeight: 'bold' },
+  modalBody: { padding: 20 },
+  editPhotoContainer: { alignItems: 'center', marginBottom: 30 },
+  editProfileImage: { width: 100, height: 100, borderRadius: 50, marginBottom: 10 },
+  changePhotoButton: { padding: 8 },
+  changePhotoText: { color: '#2e7d32', fontSize: 16, fontWeight: '600' },
+  label: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 8 },
+  input: {
+    borderWidth: 1, borderColor: '#ddd', borderRadius: 10,
+    padding: 12, fontSize: 16, backgroundColor: '#fafafa', marginBottom: 20
   },
-  backButton: {
-    marginLeft: 16,
-    padding: 8,
-  },
-  menuButton: {
-    marginRight: 16,
-    padding: 8,
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-  },
-  profileImage: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    borderWidth: 1,
-    borderColor: '#eaeaea',
-  },
-  statsContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginLeft: 16,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#111',
-  },
-  statLabel: {
-    fontSize: 13,
-    color: '#444',
-    marginTop: 2,
-  },
-  infoContainer: {
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  fullName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111',
-    marginBottom: 4,
-  },
-  description: {
-    fontSize: 14,
-    color: '#333',
-    lineHeight: 20,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    gap: 8,
-    marginBottom: 20,
-  },
-  editButton: {
-    flex: 1,
-    backgroundColor: '#f2f2f2',
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  editButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111',
-  },
-  shareButton: {
-    flex: 1,
-    backgroundColor: '#f2f2f2',
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  shareButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111',
-  },
-  tabsContainer: {
-    flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#eaeaea',
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'transparent',
-  },
-  activeTab: {
-    borderBottomColor: '#111',
-  },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  gridItem: {
-    width: width / 3,
-    height: width / 3,
-    borderWidth: 0.5,
-    borderColor: '#ffffff',
-  },
-  gridImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  communityContainer: {
-    padding: 16,
-    gap: 16,
-    backgroundColor: '#f9fafb',
-  },
-  postCard: {
-    backgroundColor: '#ffffff',
-    padding: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#eaeaea',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  postTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111',
-    marginBottom: 8,
-  },
-  postDescription: {
-    fontSize: 15,
-    color: '#555',
-    lineHeight: 22,
-    marginBottom: 12,
-  },
-  postTime: {
-    fontSize: 12,
-    color: '#999',
-    textAlign: 'right',
-  }
+  inputError: { borderColor: '#d32f2f' },
+  errorText: { color: '#d32f2f', fontSize: 12, marginTop: -15, marginBottom: 20, marginLeft: 5 },
+  textArea: { height: 100, textAlignVertical: 'top' }
 });

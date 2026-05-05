@@ -19,9 +19,9 @@ export default function TabLayout() {
         tabBarIndicatorStyle: { backgroundColor: '#004d40', top: 0, height: 3 },
         tabBarStyle: {
           backgroundColor: '#fff',
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom + 10 : 20,
-          paddingTop: 8,
-          height: Platform.OS === 'ios' ? 70 + insets.bottom : 80,
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom + 35 : 45,
+          paddingTop: 12,
+          height: Platform.OS === 'ios' ? 100 + insets.bottom : 105,
         },
         tabBarShowIcon: true,
         tabBarShowLabel: true,
@@ -34,35 +34,35 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Descubrir',
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="observatory"
         options={{
           title: 'Observatorio',
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "earth" : "earth-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "earth" : "earth-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="scanner"
         options={{
           title: 'Escáner',
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="records"
         options={{
           title: 'Mis Registros',
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "library" : "library-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "library" : "library-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="profile"
         options={{
           title: 'Perfil',
-          tabBarIcon: ({ color, focused }) => <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />,
         }}
       />
     </MaterialTopTabs>
