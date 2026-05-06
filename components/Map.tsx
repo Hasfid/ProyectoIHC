@@ -158,10 +158,10 @@ export default function Map() {
       <MapView
         style={styles.map}
         initialRegion={{
-          latitude: 5.0,
-          longitude: -63.5,
-          latitudeDelta: 10.0,
-          longitudeDelta: 10.0,
+          latitude: 4.8,
+          longitude: -64.0,
+          latitudeDelta: 45.0,
+          longitudeDelta: 45.0,
         }}
       >
         <Polygon

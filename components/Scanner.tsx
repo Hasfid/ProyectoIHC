@@ -8,6 +8,8 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { supabase } from '../lib/supabase';
 import { uploadMediaToSupabase } from '../lib/uploadMedia';
 import { identifySpecies } from '../lib/identifySpecies';
@@ -41,6 +43,33 @@ export default function Scanner() {
     } catch (err: any) {
       setPhase('scanning');
       Alert.alert('Error', err?.message ?? 'Inténtalo de nuevo.', [{ text: 'OK' }]);
+    }
+  };
+
+  const handlePickMedia = async () => {
+    if (phase !== 'scanning') return;
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images', 'videos'],
+      allowsMultipleSelection: false,
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+
+    try {
+      setPhase('identifying');
+      
+      // Convertir a base64 para la IA
+      const base64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+      const aiResult = await identifySpecies(base64);
+
+      setPreviewData({ photoUri: asset.uri, aiResult });
+      setPhase('preview');
+    } catch (err: any) {
+      setPhase('scanning');
+      Alert.alert('Error', err?.message ?? 'No se pudo procesar la imagen seleccionada.');
     }
   };
 
@@ -209,19 +238,37 @@ export default function Scanner() {
         </View>
       )}
 
-      {/* Botón de captura */}
+      {/* Botones de acción inferior */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={[styles.captureBtn, (isBusy && phase !== 'preview') && styles.captureBtnDisabled]}
-          onPress={processScan}
-          disabled={isBusy && phase !== 'preview'}
-        >
-          {(isBusy && phase !== 'preview')
-            ? <ActivityIndicator color={neonGreen} size="small" />
-            : <Ionicons name="camera" size={36} color={neonGreen} />
-          }
-        </TouchableOpacity>
-        <Text style={styles.captureLabel}>{statusLabel}</Text>
+        <View style={styles.actionButtonsContainer}>
+          {/* Botón Cargar */}
+          <TouchableOpacity
+            style={[styles.sideBtn, isBusy && styles.captureBtnDisabled]}
+            onPress={handlePickMedia}
+            disabled={isBusy}
+          >
+            <Ionicons name="images-outline" size={28} color={neonGreen} />
+            <Text style={styles.sideBtnText}>Cargar</Text>
+          </TouchableOpacity>
+
+          {/* Botón Capturar (Principal) */}
+          <TouchableOpacity
+            style={[styles.captureBtn, (isBusy && phase !== 'preview') && styles.captureBtnDisabled]}
+            onPress={processScan}
+            disabled={isBusy && phase !== 'preview'}
+          >
+            {(isBusy && phase !== 'preview')
+              ? <ActivityIndicator color={neonGreen} size="small" />
+              : <Ionicons name="scan-circle" size={48} color={neonGreen} />
+            }
+          </TouchableOpacity>
+
+          {/* Placeholder o Botón de Ayuda/Ajustes */}
+          <View style={styles.sideBtnPlaceholder}>
+            <Text style={styles.captureLabel}>TIEMPO REAL</Text>
+          </View>
+        </View>
+        <Text style={styles.statusSubtext}>{statusLabel}</Text>
       </View>
     </View>
   );
@@ -256,9 +303,14 @@ const styles = StyleSheet.create({
   loadingText:    { color: neonGreen, fontSize: 15, fontWeight: '700', letterSpacing: 1, textAlign: 'center' },
 
   bottomBar:          { position: 'absolute', bottom: 44, left: 0, right: 0, alignItems: 'center', gap: 10, zIndex: 20 },
-  captureBtn:         { width: 72, height: 72, borderRadius: 36, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: neonGreen },
+  actionButtonsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 30 },
+  sideBtn:            { alignItems: 'center', justifyContent: 'center', width: 80 },
+  sideBtnText:        { color: neonGreen, fontSize: 10, fontWeight: 'bold', marginTop: 4, letterSpacing: 0.5 },
+  sideBtnPlaceholder: { width: 80, alignItems: 'center' },
+  captureBtn:         { width: 84, height: 84, borderRadius: 42, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: neonGreen },
   captureBtnDisabled: { opacity: 0.4 },
-  captureLabel:       { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
+  captureLabel:       { color: neonGreen, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  statusSubtext:      { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
 
   previewContainer: {
     ...StyleSheet.absoluteFillObject,

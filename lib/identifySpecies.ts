@@ -10,13 +10,20 @@ export async function identifySpecies(base64Image: string) {
           {
             text: `Eres un experto biólogo de la región de Guayana, Venezuela. Identifica la especie animal o vegetal en la imagen. Responde ÚNICAMENTE con un JSON válido, sin formato markdown ni etiquetas. El JSON debe tener exactamente esta estructura:
 {
-  "nombreTradicional": "Nombre común",
-  "nombreCientifico": "Nombre científico",
-  "peligrosidad": "Alta / Media / Baja / Nula",
-  "alimentacion": "Carnívoro / Herbívoro / Omnívoro / etc o N/A para plantas",
-  "iaCerteza": 0.95
+  "candidates": [
+    {
+      "nombreTradicional": "Nombre común",
+      "nombreCientifico": "Nombre científico",
+      "peligrosidad": "Alta / Media / Baja / Nula",
+      "alimentacion": "Carnívoro / Herbívoro / Omnívoro / etc",
+      "iaCerteza": 0.95,
+      "descripcionBiologica": "Descripción detallada...",
+      "curiosidades": ["Dato 1", "Dato 2"],
+      "mitos": "Leyenda local asociada"
+    }
+  ]
 }
-Si no puedes identificarlo con certeza, da tu mejor estimación. iaCerteza debe ser un número decimal entre 0 y 1.`
+Provee hasta 3 candidatos posibles ordenados por certeza de mayor a menor. iaCerteza debe ser un número decimal entre 0 y 1.`
           },
           {
             inline_data: {

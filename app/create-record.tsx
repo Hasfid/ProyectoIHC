@@ -11,6 +11,10 @@ import * as Location from 'expo-location';
 import Map from '../components/Map';
 import { supabase } from '../lib/supabase';
 import { uploadMediaToSupabase } from '../lib/uploadMedia';
+import { isPointInPolygon, GUAYANA_POLYGON } from '../lib/geofence';
+import { saveDraft } from '../lib/drafts';
+import { identifySpecies } from '../lib/identifySpecies';
+import * as FileSystem from 'expo-file-system/legacy';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 type RegistroInsert = {
@@ -70,6 +74,8 @@ export default function CreateRecordScreen() {
   const [locLoading,      setLocLoading]      = useState(false);
 
   const [publishing, setPublishing] = useState(false);
+  const [isIdentifying, setIsIdentifying] = useState(false);
+  const [iaCerteza, setIaCerteza] = useState(iaCertezaNum);
 
   // ─── Buscar especies en registros anteriores ──────────────────────────────
   const handleSearchChange = (text: string) => {
@@ -122,17 +128,74 @@ export default function CreateRecordScreen() {
 
     const asset    = result.assets[0];
     const mimeType = asset.mimeType ?? 'image/jpeg';
-    setUploadingMedia(true);
+    
+    setLocalMediaUri(asset.uri);
+    setCurrentMediaUrl(asset.uri);
+    setCurrentTipoMedia(mimeType.startsWith('video') ? 'video' : 'imagen');
+
+    // Disparar análisis automático
+    setTimeout(() => handleAnalyzeIA(asset.uri), 500);
+  };
+
+  const [selectedFullInfo, setSelectedFullInfo] = useState<any>(null);
+
+  // ─── Analizar con IA ──────────────────────────────────────────────────────
+  const handleAnalyzeIA = async (overrideUri?: string) => {
+    const uriToAnalyze = overrideUri || localMediaUri;
+    if (!uriToAnalyze) return;
+    
+    setIsIdentifying(true);
+    setAiCandidates([]);
     try {
-      const url = await uploadMediaToSupabase(asset.uri, mimeType);
-      setCurrentMediaUrl(url);
-      setCurrentTipoMedia(mimeType.startsWith('video') ? 'video' : 'imagen');
+      let base64 = '';
+      
+      if (Platform.OS === 'web') {
+        const resp = await fetch(uriToAnalyze);
+        const blob = await resp.blob();
+        base64 = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+          };
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        base64 = await FileSystem.readAsStringAsync(uriToAnalyze, { encoding: 'base64' });
+      }
+
+      const result = await identifySpecies(base64);
+      const candidates = result.candidates || [];
+      setAiCandidates(candidates);
+
+      if (candidates.length > 0) {
+        // Seleccionar el primero por defecto (el más probable)
+        selectCandidate(candidates[0]);
+      }
     } catch (err: any) {
-      Alert.alert('Error al subir', err?.message ?? 'Inténtalo de nuevo.');
+      console.error('IA Error:', err);
+      Alert.alert('Error IA', 'No se pudo identificar la especie automáticamente.');
     } finally {
-      setUploadingMedia(false);
+      setIsIdentifying(false);
     }
   };
+
+  const selectCandidate = (cand: any) => {
+    setNombreTradicional(cand.nombreTradicional);
+    setNombreCientifico(cand.nombreCientifico);
+    setPeligrosidad(cand.peligrosidad);
+    setAlimentacion(cand.alimentacion);
+    setIaCerteza(cand.iaCerteza);
+    setSelectedFullInfo({
+      descripcion_biologica: cand.descripcionBiologica,
+      curiosidades: cand.curiosidades,
+      mitos: cand.mitos
+    });
+  };
+
+  const [aiCandidates, setAiCandidates] = useState<any[]>([]);
+
+  const [localMediaUri, setLocalMediaUri] = useState<string | null>(null);
 
   // ─── Abrir mapa y obtener GPS ─────────────────────────────────────────────
   const handleOpenMap = async () => {
@@ -157,14 +220,66 @@ export default function CreateRecordScreen() {
     setMapModalVisible(false);
   };
 
+  const handleSaveAsDraft = async () => {
+    if (!nombreTradicional.trim()) return Alert.alert('Falta especie', 'Ingresá el nombre para el borrador.');
+    if (!coords)                   return Alert.alert('Falta ubicación', 'Confirmá la ubicación en el mapa.');
+    if (!currentMediaUrl)          return Alert.alert('Falta imagen',   'Adjuntá al menos una foto o video.');
+
+    const success = await saveDraft({
+      nombre_tradicional: nombreTradicional.trim(),
+      nombre_cientifico: nombreCientifico.trim(),
+      peligrosidad: peligrosidad.trim(),
+      alimentacion: alimentacion.trim(),
+      descripcion: descripcion.trim(),
+      media_uri: currentMediaUrl,
+      tipo_media: currentTipoMedia,
+      latitud: coords.lat,
+      longitud: coords.lng,
+    });
+
+    if (success) {
+      Alert.alert(
+        'Borrador Guardado 💾',
+        'El registro se guardó localmente. Se subirá automáticamente cuando recuperes la conexión.',
+        [{ text: 'Entendido', onPress: () => router.replace('/(tabs)') }]
+      );
+    }
+  };
+
   // ─── Publicar en Supabase ─────────────────────────────────────────────────
   const handlePublish = async () => {
     if (!nombreTradicional.trim()) return Alert.alert('Falta especie', 'Ingresá el nombre de la especie.');
     if (!coords)                   return Alert.alert('Falta ubicación', 'Confirmá la ubicación en el mapa.');
     if (!currentMediaUrl)          return Alert.alert('Falta imagen',   'Adjuntá al menos una foto o video.');
 
+    // Validar Geofencing (Región Guayana)
+    const isInsideGuayana = isPointInPolygon(
+      { latitude: coords.lat, longitude: coords.lng },
+      GUAYANA_POLYGON
+    );
+
+    if (!isInsideGuayana) {
+      return Alert.alert(
+        'Ubicación inválida',
+        'La ubicación seleccionada no pertenece a una región de la guayana venezolana.'
+      );
+    }
+
     setPublishing(true);
     try {
+      // 0. Subir archivo a Supabase ahora (antes de insertar el registro)
+      let finalMediaUrl = currentMediaUrl;
+      if (localMediaUri) {
+        setUploadingMedia(true);
+        try {
+          finalMediaUrl = await uploadMediaToSupabase(localMediaUri, currentTipoMedia === 'video' ? 'video/mp4' : 'image/jpeg');
+        } catch (uploadErr: any) {
+          throw new Error(`Error al subir archivo: ${uploadErr.message}`);
+        } finally {
+          setUploadingMedia(false);
+        }
+      }
+
       // 1. Obtener sesión — si no hay, iniciar sesión anónima
       let { data: { session } } = await supabase.auth.getSession();
       if (!session) {
@@ -176,7 +291,7 @@ export default function CreateRecordScreen() {
         }
       }
 
-      // 2. Construir el payload con los nombres exactos de columna de `registros`
+      // 2. Construir el payload
       const registro: RegistroInsert = {
         usuario_id:         session?.user.id,
         nombre_tradicional: nombreTradicional.trim(),
@@ -184,17 +299,35 @@ export default function CreateRecordScreen() {
         peligrosidad:       peligrosidad.trim(),
         alimentacion:       alimentacion.trim(),
         descripcion:        descripcion.trim(),
-        media_url:          currentMediaUrl,
+        media_url:          finalMediaUrl,
         tipo_media:         currentTipoMedia,
         latitud:            coords.lat,
         longitud:           coords.lng,
         ia_certeza:         iaCertezaNum,
-        metadatos_especie:  { origen: fromScanner ? 'scanner' : 'manual' },
+        metadatos_especie:  { 
+          origen: fromScanner ? 'scanner' : 'manual',
+          ...(selectedFullInfo || {})
+        },
       };
 
       // 3. Insertar en Supabase
       const { error } = await supabase.from('registros').insert([registro]);
-      if (error) throw new Error(error.message);
+      
+      if (error) {
+        // Si el error parece de red, sugerir guardarlo como borrador
+        if (error.message.includes('Network') || error.message.includes('fetch')) {
+          Alert.alert(
+            'Sin conexión',
+            'No pudimos conectar con el servidor. ¿Quieres guardar este registro como un borrador local?',
+            [
+              { text: 'Cancelar', style: 'cancel' },
+              { text: 'Guardar Borrador', onPress: handleSaveAsDraft }
+            ]
+          );
+          return;
+        }
+        throw new Error(error.message);
+      }
 
       Alert.alert(
         '¡Registrado! 🎉',
@@ -216,7 +349,7 @@ export default function CreateRecordScreen() {
     >
       <Stack.Screen
         options={{
-          headerTitle: 'Nuevo Registro',
+          headerTitle: 'Cargar Registro',
           headerStyle: { backgroundColor: '#f9fafb' },
           headerShadowVisible: false,
           headerLeft: () => (
@@ -255,10 +388,42 @@ export default function CreateRecordScreen() {
               : <Ionicons name="cloud-upload-outline" size={30} color="#004d40" />
             }
             <Text style={styles.addMediaText}>
-              {uploadingMedia ? 'Subiendo...' : currentMediaUrl ? 'Cambiar' : 'Cargar'}
+              {currentMediaUrl ? 'Cambiar' : 'Cargar'}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* ── Lista de Candidatos IA ── */}
+        {(isIdentifying || aiCandidates.length > 0) && (
+          <View style={styles.candidatesSection}>
+            <Text style={styles.candidatesTitle}>
+              {isIdentifying ? 'Analizando especie...' : 'Seleccione el resultado más preciso:'}
+            </Text>
+            {isIdentifying && <ActivityIndicator color="#004d40" style={{ marginVertical: 10 }} />}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.candidatesScroll}>
+              {aiCandidates.map((cand, idx) => {
+                const isSelected = nombreTradicional === cand.nombreTradicional;
+                return (
+                  <TouchableOpacity 
+                    key={idx} 
+                    style={[styles.candidateCard, isSelected && styles.candidateCardActive]}
+                    onPress={() => selectCandidate(cand)}
+                  >
+                    <Text style={[styles.candidatePercent, isSelected && styles.candidatePercentActive]}>
+                      {Math.round(cand.iaCerteza * 100)}%
+                    </Text>
+                    <Text style={[styles.candidateName, isSelected && styles.candidateNameActive]} numberOfLines={1}>
+                      {cand.nombreTradicional}
+                    </Text>
+                    <Text style={styles.candidateScientific} numberOfLines={1}>
+                      {cand.nombreCientifico}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
 
         {/* ── Selección/búsqueda de especie ── */}
         <View style={styles.sectionHeader}>
@@ -301,42 +466,46 @@ export default function CreateRecordScreen() {
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Nombre Tradicional *</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: '#f0f0f0' }]}
               value={nombreTradicional}
               onChangeText={setNombreTradicional}
-              placeholder="Ej: Jaguar"
+              placeholder="Detectado por IA..."
               placeholderTextColor="#aaa"
+              editable={false}
             />
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>Nombre Científico</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: '#f0f0f0' }]}
               value={nombreCientifico}
               onChangeText={setNombreCientifico}
-              placeholder="Ej: Panthera onca"
+              placeholder="Detectado por IA..."
               placeholderTextColor="#aaa"
+              editable={false}
             />
           </View>
           <View style={styles.fieldGroup}>
             <View style={styles.fieldHalf}>
               <Text style={styles.fieldLabel}>Peligrosidad</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: '#f0f0f0' }]}
                 value={peligrosidad}
                 onChangeText={setPeligrosidad}
-                placeholder="Alta / Media / Baja"
+                placeholder="---"
                 placeholderTextColor="#aaa"
+                editable={false}
               />
             </View>
             <View style={styles.fieldHalf}>
               <Text style={styles.fieldLabel}>Alimentación</Text>
               <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: '#f0f0f0' }]}
                 value={alimentacion}
                 onChangeText={setAlimentacion}
-                placeholder="Carnívoro..."
+                placeholder="---"
                 placeholderTextColor="#aaa"
+                editable={false}
               />
             </View>
           </View>
@@ -372,17 +541,28 @@ export default function CreateRecordScreen() {
           onChangeText={setDescripcion}
         />
 
-        {/* ── Botón Publicar ── */}
-        <TouchableOpacity
-          style={[styles.publishBtn, publishing && { opacity: 0.6 }]}
-          onPress={handlePublish}
-          disabled={publishing}
-        >
-          {publishing
-            ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.publishBtnText}>Publicar en Supabase</Text>
-          }
-        </TouchableOpacity>
+        {/* ── Botones de Acción ── */}
+        <View style={styles.actionButtonsRow}>
+          <TouchableOpacity
+            style={[styles.draftBtn, publishing && { opacity: 0.6 }]}
+            onPress={handleSaveAsDraft}
+            disabled={publishing}
+          >
+            <Ionicons name="save-outline" size={20} color="#004d40" />
+            <Text style={styles.draftBtnText}>Borrador</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.publishBtn, { flex: 1 }, publishing && { opacity: 0.6 }]}
+            onPress={handlePublish}
+            disabled={publishing}
+          >
+            {publishing
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.publishBtnText}>Publicar</Text>
+            }
+          </TouchableOpacity>
+        </View>
 
       </ScrollView>
 
@@ -440,6 +620,29 @@ const styles = StyleSheet.create({
   mediaPreview:{ width: 100, height: 100, borderRadius: 12, resizeMode: 'cover' },
   addMediaBtn: { width: 100, height: 100, borderRadius: 12, backgroundColor: '#e0f2f1', justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#80cbc4', borderStyle: 'dashed' },
   addMediaText:{ color: '#004d40', fontWeight: 'bold', marginTop: 6, fontSize: 12 },
+  
+  // IA Candidates
+  candidatesSection: { marginTop: 16, backgroundColor: '#fff', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#eee' },
+  candidatesTitle: { fontSize: 13, fontWeight: 'bold', color: '#555', marginBottom: 12, textTransform: 'uppercase' },
+  candidatesScroll: { gap: 12 },
+  candidateCard: { width: 140, padding: 12, borderRadius: 12, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e0e0e0' },
+  candidateCardActive: { backgroundColor: '#e0f2f1', borderColor: '#004d40' },
+  candidatePercent: { fontSize: 10, fontWeight: 'bold', color: '#666', marginBottom: 4 },
+  candidatePercentActive: { color: '#004d40' },
+  candidateName: { fontSize: 14, fontWeight: 'bold', color: '#333' },
+  candidateNameActive: { color: '#004d40' },
+  candidateScientific: { fontSize: 11, fontStyle: 'italic', color: '#888' },
+  iaAnalyzeBtn: {
+    flex: 1,
+    height: 100,
+    backgroundColor: '#004d40',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iaAnalyzeText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
 
   // Búsqueda
   searchPanel:    { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e0e0e0', marginBottom: 8, overflow: 'hidden' },
@@ -465,7 +668,20 @@ const styles = StyleSheet.create({
   mapBtnText:     { color: '#004d40', fontWeight: 'bold', fontSize: 15, flex: 1 },
 
   // Publicar
-  publishBtn:     { backgroundColor: '#004d40', padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 32, minHeight: 58, justifyContent: 'center' },
+  actionButtonsRow: { flexDirection: 'row', gap: 12, marginTop: 32 },
+  draftBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#004d40',
+    backgroundColor: '#fff',
+    gap: 8,
+  },
+  draftBtnText: { color: '#004d40', fontSize: 16, fontWeight: 'bold' },
+  publishBtn: { backgroundColor: '#004d40', padding: 18, borderRadius: 16, alignItems: 'center', minHeight: 58, justifyContent: 'center' },
   publishBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
 
   // Modal mapa

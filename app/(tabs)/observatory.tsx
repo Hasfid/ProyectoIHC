@@ -1,7 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { Tabs, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useState, useCallback } from 'react';
 import {
   Image,
   ScrollView,
@@ -9,85 +8,280 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  Platform,
 } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
+import { supabase } from '../../lib/supabase';
+import { followUser, unfollowUser, getFollowingIds } from '../../lib/follows';
+
+// ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
+// VIDEO ACTUAL: URL directa a MP4 en Supabase Storage
+const LIVE_VIDEO_URL = 'https://lurpzudnafegijlteoym.supabase.co/storage/v1/object/sign/Video/RegionGuayana.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZDM1YTNjZC1hYjVmLTQyMGYtYWUxNS01MmFhYzI3MWFjMjUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJWaWRlby9SZWdpb25HdWF5YW5hLm1wNCIsImlhdCI6MTc3ODAzODg3MywiZXhwIjoxODA5NTc0ODczfQ.MC2K_4VJk6P_SxeS46EpeCFfV5fNq6q6H9cwzEzXSKY';
+//
+// PARA STREAM EN VIVO (expansión futura):
+// 1. Reemplazá LIVE_VIDEO_URL con la URL HLS del stream:
+//    const LIVE_VIDEO_URL = 'https://tu-servidor.com/live/stream.m3u8';
+// 2. expo-av y <video> soportan HLS nativamente, no hay que cambiar más nada.
+// ────────────────────────────────────────────────────────────────────
+
+type Post = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  created_at: string;
+  usuario_id: string;
+  perfiles: {
+    username: string;
+    nombre: string;
+    foto_perfil: string | null;
+  };
+};
 
 export default function ObservatoryScreen() {
   const router = useRouter();
 
-  // Datos simulados de la comunidad
-  const [posts, setPosts] = useState([
-    {
-      id: '1',
-      title: 'Avistamiento de Jaguar',
-      description: 'Se avistó un jaguar cruzando el sendero principal cerca del río en la zona norte del parque esta mañana.',
-      time: 'Hace 2 horas',
-      user: {
-        name: 'Carlos Mendoza',
-        avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=100&h=100'
-      }
-    },
-    {
-      id: '2',
-      title: 'Alerta: Conato de incendio',
-      description: 'Por favor evitar la ruta este, hay un pequeño reporte de humo que los guardabosques ya están revisando.',
-      time: 'Hace 5 horas',
-      user: {
-        name: 'Guardabosques Oficial',
-        avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100&h=100'
-      }
-    },
-    {
-      id: '3',
-      title: 'Nueva especie de orquídea',
-      description: 'El equipo de botánica acaba de catalogar una nueva orquídea en las zonas húmedas del sur.',
-      time: 'Hace 1 día',
-      user: {
-        name: 'Ana Botánica',
-        avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=100&h=100'
-      }
-    }
-  ]);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [isCreatingPost, setIsCreatingPost] = useState(false);
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostDesc, setNewPostDesc] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
-  const handleCreatePost = () => {
-    if (!newPostTitle.trim() || !newPostDesc.trim()) return;
-    
-    const newPost = {
-      id: Date.now().toString(),
-      title: newPostTitle,
-      description: newPostDesc,
-      time: 'Justo ahora',
-      user: {
-        name: 'Tu Perfil',
-        avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?auto=format&fit=crop&q=80&w=100&h=100'
+  console.log('Observatory Screen Render - Posts:', posts.length);
+
+  const fetchPosts = async () => {
+    try {
+      console.log('fetchPosts started...');
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id || null;
+      setCurrentUserId(uid);
+
+      // Paso 1: Buscar las publicaciones
+      const { data: postsData, error: postsError } = await supabase
+        .from('publicaciones')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false }); // Tie-breaker
+
+      if (postsError) throw postsError;
+
+      if (!postsData || postsData.length === 0) {
+        setPosts([]);
+        return { posts: [], uid };
       }
-    };
 
-    setPosts([newPost, ...posts]);
-    setIsCreatingPost(false);
-    setNewPostTitle('');
-    setNewPostDesc('');
+      // Paso 2: Obtener los IDs únicos de los autores
+      const authorIds = [...new Set(postsData.map(p => p.usuario_id))];
+
+      // Paso 3: Buscar los perfiles de esos autores
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('perfiles')
+        .select('id, username, nombre, foto_perfil')
+        .in('id', authorIds);
+
+      // Paso 4: Combinar los datos
+      const profilesMap = new Map((profilesData || []).map(p => [p.id, p]));
+      
+      const combinedPosts = postsData.map(post => ({
+        ...post,
+        perfiles: profilesMap.get(post.usuario_id) || {
+          username: 'Usuario',
+          nombre: 'Usuario',
+          foto_perfil: null
+        }
+      }));
+
+      console.log('fetchPosts combined success, count:', combinedPosts.length);
+      setPosts(combinedPosts as Post[]);
+      return { posts: combinedPosts, uid };
+
+    } catch (err: any) {
+      console.error('Error fetching posts:', err);
+      Alert.alert('Error', 'No se pudieron cargar las publicaciones: ' + (err?.message || ''));
+      return { posts: [], uid: null };
+    }
+  };
+
+  const fetchFollowingIds = async (uid: string | null) => {
+    const userIdToUse = uid || currentUserId;
+    if (!userIdToUse) return;
+    try {
+      console.log('fetchFollowingIds for:', userIdToUse);
+      const ids = await getFollowingIds(userIdToUse);
+      setFollowingIds(ids);
+    } catch (err) {
+      console.error('Error fetching following ids:', err);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      let isMounted = true;
+      setLoading(true);
+      fetchPosts().then(({ uid }) => {
+        if (isMounted) fetchFollowingIds(uid);
+      }).finally(() => {
+        if (isMounted) setLoading(false);
+      });
+      return () => { isMounted = false; };
+    }, [])
+  );
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const { uid } = await fetchPosts();
+    await fetchFollowingIds(uid);
+    setRefreshing(false);
+  };
+
+  const handleToggleFollow = async (targetUserId: string) => {
+    if (!currentUserId) return;
+    try {
+      const isFollowing = followingIds.has(targetUserId);
+      if (isFollowing) {
+        await unfollowUser(currentUserId, targetUserId);
+        setFollowingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(targetUserId);
+          return next;
+        });
+      } else {
+        await followUser(currentUserId, targetUserId);
+        setFollowingIds((prev) => new Set(prev).add(targetUserId));
+      }
+    } catch (err) {
+      console.error('Error toggling follow:', err);
+    }
+  };
+
+  const handleCreatePost = async () => {
+    if (!newPostTitle.trim() || !newPostDesc.trim()) {
+      Alert.alert('Error', 'Completa el título y la descripción.');
+      return;
+    }
+
+    if (!currentUserId) {
+      Alert.alert('Error', 'Debes iniciar sesión para publicar.');
+      return;
+    }
+
+    setPublishing(true);
+    try {
+      const { error } = await supabase.from('publicaciones').insert({
+        usuario_id: currentUserId,
+        titulo: newPostTitle.trim(),
+        descripcion: newPostDesc.trim(),
+      });
+
+      if (error) throw error;
+
+      setIsCreatingPost(false);
+      setNewPostTitle('');
+      setNewPostDesc('');
+      await fetchPosts();
+    } catch (err) {
+      console.error('Error creating post:', err);
+      Alert.alert('Error', 'No se pudo crear la publicación.');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  const handleDeletePost = (postId: string) => {
+    Alert.alert(
+      'Eliminar publicación',
+      '¿Estás seguro de que quieres eliminar esta publicación?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('publicaciones')
+                .delete()
+                .eq('id', postId);
+              if (error) throw error;
+              await fetchPosts();
+            } catch (err) {
+              console.error('Error deleting post:', err);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return 'Justo ahora';
+    if (diffMin < 60) return `Hace ${diffMin} min`;
+    if (diffHrs < 24) return `Hace ${diffHrs}h`;
+    if (diffDays < 7) return `Hace ${diffDays}d`;
+    return date.toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });
+  };
+
+  const navigateToProfile = (userId: string) => {
+    if (userId === currentUserId) return;
+    router.push({ pathname: '/user-profile', params: { userId } });
   };
 
   return (
     <View style={styles.container}>
-      {/* Custom Header para Top Tabs */}
       <View style={styles.customHeader}>
         <Text style={styles.customHeaderTitle}>Observatorio</Text>
       </View>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* Sección de Transmisión en Vivo */}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2e7d32" />
+        }
+      >
+        {/* Transmisión en Vivo */}
         <Text style={styles.sectionTitle}>Transmisión en Vivo</Text>
         <View style={styles.liveCameraFrame}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1542273917363-3b1817f69a2d?auto=format&fit=crop&q=80&w=800&h=400' }}
-            style={styles.liveCameraImage}
-          />
+          {Platform.OS === 'web' ? (
+            <video
+              src={LIVE_VIDEO_URL}
+              autoPlay
+              muted
+              loop
+              playsInline
+              crossOrigin="anonymous"
+              style={{ 
+                width: '100%', 
+                height: '100%', 
+                objectFit: 'cover', 
+                objectPosition: 'center' 
+              }}
+            />
+          ) : (
+            <Video
+              source={{ uri: LIVE_VIDEO_URL }}
+              style={styles.liveCameraImage}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay
+              isMuted
+              isLooping
+            />
+          )}
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
             <Text style={styles.liveText}>EN VIVO</Text>
@@ -97,12 +291,12 @@ export default function ObservatoryScreen() {
         {/* Sección de Comunidad */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitleCommunity}>Comunidad</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.createPostBtn}
             onPress={() => setIsCreatingPost(!isCreatingPost)}
           >
             <Text style={styles.createPostBtnText}>
-              {isCreatingPost ? 'Cancelar' : 'Crear publicación'}
+              {isCreatingPost ? 'Cancelar' : '+ Publicar'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -115,6 +309,7 @@ export default function ObservatoryScreen() {
               value={newPostTitle}
               onChangeText={setNewPostTitle}
               placeholderTextColor="#999"
+              editable={!publishing}
             />
             <TextInput
               style={styles.inputDesc}
@@ -124,33 +319,97 @@ export default function ObservatoryScreen() {
               value={newPostDesc}
               onChangeText={setNewPostDesc}
               placeholderTextColor="#999"
+              editable={!publishing}
             />
-            <TouchableOpacity style={styles.submitBtn} onPress={handleCreatePost}>
-              <Text style={styles.submitBtnText}>Publicar</Text>
+            <TouchableOpacity
+              style={[styles.submitBtn, publishing && { opacity: 0.6 }]}
+              onPress={handleCreatePost}
+              disabled={publishing}
+            >
+              {publishing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.submitBtnText}>Publicar</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
 
-        <View style={styles.postsContainer}>
-          {posts.map((post) => (
-            <View key={post.id} style={styles.postCard}>
-              <View style={styles.postHeader}>
-                <Image source={{ uri: post.user.avatar }} style={styles.postAvatar} />
-                <View style={styles.postUserInfo}>
-                  <Text style={styles.postUserName}>{post.user.name}</Text>
-                  <Text style={styles.postTime}>{post.time}</Text>
-                </View>
-                <TouchableOpacity style={styles.followBtn}>
-                  <Text style={styles.followBtnText}>Seguir</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.postTitle}>{post.title}</Text>
-              <Text style={styles.postDescription}>{post.description}</Text>
-            </View>
-          ))}
-        </View>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#2e7d32" />
+          </View>
+        ) : posts.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="chatbubbles-outline" size={56} color="#ccc" />
+            <Text style={styles.emptyText}>No hay publicaciones aún.</Text>
+            <Text style={styles.emptySubtext}>¡Sé el primero en compartir algo!</Text>
+            <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
+              <Text style={styles.retryBtnText}>Actualizar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.postsContainer}>
+            {posts.map((post) => {
+              const perfil = post.perfiles;
+              const hasPhoto = perfil?.foto_perfil && !perfil.foto_perfil.includes('images.unsplash.com');
+              const isOwner = post.usuario_id === currentUserId;
 
-        <View style={{ height: 80 }} /> {/* Espacio para que el scroll termine limpio */}
+              return (
+                <View key={post.id} style={styles.postCard}>
+                  <View style={styles.postHeader}>
+                    <TouchableOpacity
+                      style={styles.postHeaderLeft}
+                      onPress={() => navigateToProfile(post.usuario_id)}
+                      activeOpacity={0.7}
+                    >
+                      {hasPhoto ? (
+                        <Image source={{ uri: perfil.foto_perfil! }} style={styles.postAvatar} />
+                      ) : (
+                        <View style={[styles.postAvatar, styles.avatarPlaceholder]}>
+                          <Ionicons name="person" size={18} color="#ccc" />
+                        </View>
+                      )}
+                      <View style={styles.postUserInfo}>
+                        <Text style={styles.postUserName}>
+                          {perfil?.username || perfil?.nombre || 'Usuario'}
+                        </Text>
+                        <Text style={styles.postTime}>{getTimeAgo(post.created_at)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    {isOwner ? (
+                      <TouchableOpacity
+                        style={styles.deleteBtn}
+                        onPress={() => handleDeletePost(post.id)}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="#d32f2f" />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={[
+                          styles.followBtn,
+                          followingIds.has(post.usuario_id) && styles.followingBtn,
+                        ]}
+                        onPress={() => handleToggleFollow(post.usuario_id)}
+                      >
+                        <Text style={[
+                          styles.followBtnText,
+                          followingIds.has(post.usuario_id) && styles.followingBtnText,
+                        ]}>
+                          {followingIds.has(post.usuario_id) ? 'Siguiendo' : 'Seguir'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <Text style={styles.postTitle}>{post.titulo}</Text>
+                  <Text style={styles.postDescription}>{post.descripcion}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={{ height: 80 }} />
       </ScrollView>
     </View>
   );
@@ -178,14 +437,8 @@ const styles = StyleSheet.create({
     color: '#111',
   },
   scrollContent: {
-    paddingTop: 100, // Espacio para el header transparente
+    paddingTop: 100,
     paddingHorizontal: 20,
-  },
-  backButton: {
-    marginLeft: 16,
-    padding: 8,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-    borderRadius: 20,
   },
   sectionTitle: {
     fontSize: 22,
@@ -197,10 +450,10 @@ const styles = StyleSheet.create({
   liveCameraFrame: {
     width: '100%',
     height: 220,
-    backgroundColor: '#3e2723', // Color madera oscura
+    backgroundColor: '#3e2723',
     borderRadius: 16,
     borderWidth: 6,
-    borderColor: '#6d4c41', // Estética madera minimalista
+    borderColor: '#6d4c41',
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -238,6 +491,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     letterSpacing: 0.5,
   },
+  playOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.2)',
+  },
   sectionTitleCommunity: {
     fontSize: 22,
     fontWeight: '700',
@@ -251,7 +514,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   createPostBtn: {
-    backgroundColor: '#004d40',
+    backgroundColor: '#2e7d32',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
@@ -291,7 +554,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   submitBtn: {
-    backgroundColor: '#004d40',
+    backgroundColor: '#2e7d32',
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -301,36 +564,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  postHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  postAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    marginRight: 12,
-    backgroundColor: '#eaeaea',
-  },
-  postUserInfo: {
+  loadingContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
   },
-  postUserName: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111',
+  emptyContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 60,
   },
-  followBtn: {
-    backgroundColor: '#f0f0f0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    marginTop: 12,
   },
-  followBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#004d40',
+  emptySubtext: {
+    fontSize: 14,
+    color: '#bbb',
+    marginTop: 4,
   },
   postsContainer: {
     gap: 16,
@@ -347,6 +600,44 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  postHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  postHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  postAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
+    backgroundColor: '#eaeaea',
+  },
+  avatarPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+  },
+  postUserInfo: {
+    flex: 1,
+  },
+  postUserName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111',
+  },
+  postTime: {
+    fontSize: 12,
+    color: '#999',
+  },
+  deleteBtn: {
+    padding: 8,
+  },
   postTitle: {
     fontSize: 18,
     fontWeight: '600',
@@ -357,10 +648,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#555',
     lineHeight: 22,
-    marginBottom: 12,
   },
-  postTime: {
-    fontSize: 12,
-    color: '#999',
-  }
+  followBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#2e7d32',
+  },
+  followingBtn: {
+    backgroundColor: '#e8f5e9',
+    borderWidth: 1,
+    borderColor: '#2e7d32',
+  },
+  followBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  followingBtnText: {
+    color: '#2e7d32',
+  },
+  retryBtn: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#2e7d32',
+    borderRadius: 8,
+  },
+  retryBtnText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
 });

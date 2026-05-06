@@ -8,9 +8,7 @@ import {
   TouchableOpacity,
   Image,
   ActivityIndicator,
-  Dimensions,
 } from 'react-native';
-import PagerView from 'react-native-pager-view';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
@@ -23,8 +21,6 @@ import {
   unfollowUser,
   getFollowingIds,
 } from '../lib/follows';
-
-const { width } = Dimensions.get('window');
 
 type UserProfile = {
   id: string;
@@ -49,7 +45,7 @@ export default function SocialScreen() {
 
   const initialTabIndex = TABS.findIndex(t => t.key === params.tab) ?? 2;
   const [activeTab, setActiveTab] = useState(initialTabIndex >= 0 ? initialTabIndex : 2);
-  const pagerRef = React.useRef<PagerView>(null);
+
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -150,7 +146,6 @@ export default function SocialScreen() {
 
   const onTabPress = (index: number) => {
     setActiveTab(index);
-    pagerRef.current?.setPage(index);
   };
 
   const renderUser = ({ item }: { item: UserProfile }) => {
@@ -255,48 +250,36 @@ export default function SocialScreen() {
           <ActivityIndicator size="large" color="#2e7d32" />
         </View>
       ) : (
-        <PagerView
-          ref={pagerRef}
-          style={{ flex: 1 }}
-          initialPage={activeTab}
-          onPageSelected={(e) => setActiveTab(e.nativeEvent.position)}
-        >
-          {/* Tab: Seguidores */}
-          <View key="followers" style={{ flex: 1 }}>
-            {renderList(followers, 'Aún no tiene seguidores')}
-          </View>
-
-          {/* Tab: Seguidos */}
-          <View key="following" style={{ flex: 1 }}>
-            {renderList(following, 'Aún no sigue a nadie')}
-          </View>
-
-          {/* Tab: Descubrir */}
-          <View key="discover" style={{ flex: 1 }}>
-            {/* Barra de búsqueda */}
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Buscar por nombre de usuario..."
-                placeholderTextColor="#999"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {searchQuery.length > 0 && (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <Ionicons name="close-circle" size={20} color="#999" />
-                </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          {activeTab === 0 && renderList(followers, 'Aún no tiene seguidores')}
+          {activeTab === 1 && renderList(following, 'Aún no sigue a nadie')}
+          {activeTab === 2 && (
+            <>
+              {/* Barra de búsqueda */}
+              <View style={styles.searchContainer}>
+                <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Buscar por nombre de usuario..."
+                  placeholderTextColor="#999"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={20} color="#999" />
+                  </TouchableOpacity>
+                )}
+              </View>
+              {renderList(
+                discovered,
+                searchQuery ? 'No se encontraron usuarios' : 'No hay usuarios para descubrir'
               )}
-            </View>
-            {renderList(
-              discovered,
-              searchQuery ? 'No se encontraron usuarios' : 'No hay usuarios para descubrir'
-            )}
-          </View>
-        </PagerView>
+            </>
+          )}
+        </View>
       )}
     </View>
   );

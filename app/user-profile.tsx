@@ -177,6 +177,13 @@ export default function UserProfileScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.messageButton]}
+              onPress={() => router.push({ pathname: '/messages', params: { userId } })}
+            >
+              <Text style={styles.messageButtonText}>Mensaje</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -296,5 +303,15 @@ const styles = StyleSheet.create({
   },
   unfollowButtonText: {
     color: '#555',
+  },
+  messageButton: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  messageButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111',
   },
 });

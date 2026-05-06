@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, View, Text, FlatList, Image, TouchableOpacity,
-  Modal, ActivityIndicator, ScrollView, Platform
+  Modal, ActivityIndicator, ScrollView, Platform, Dimensions
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,8 +22,7 @@ export default function RecordsScreen() {
   useEffect(() => {
     if (selectedRecord) {
       setLoadingEnrichedData(true);
-      setEnrichedData(null);
-      getEnrichedData(selectedRecord.nombre_tradicional).then((data) => {
+      getEnrichedData(selectedRecord).then((data) => {
         setEnrichedData(data);
         setLoadingEnrichedData(false);
       });
@@ -37,21 +36,10 @@ export default function RecordsScreen() {
   const fetchRecords = async () => {
     setLoading(true);
     try {
-      // 1. Obtener sesión para traer solo "Mis Registros"
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      if (!userId) {
-        setRecords([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2. Fetch de Supabase
+      // Fetch Global de todos los registros
       const { data, error } = await supabase
         .from('registros')
         .select('*')
-        .eq('usuario_id', userId)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -93,10 +81,28 @@ export default function RecordsScreen() {
     return true;
   });
 
-  const getEnrichedData = async (nombre: string) => {
+  // Agrupar por nombre científico único para mayor precisión taxonómica
+  const speciesCategories = Array.from(new Set(filteredRecords.map(r => r.nombre_cientifico || 'Especie No Identificada')))
+    .map(sciName => {
+      const allForSpecies = filteredRecords.filter(r => (r.nombre_cientifico || 'Especie No Identificada') === sciName);
+      return {
+        ...allForSpecies[0], // Datos representativos (usamos el primero)
+        allSightings: allForSpecies, // Todos los registros de esta especie
+        count: allForSpecies.length,
+      };
+    });
+
+  const getEnrichedData = async (item: any) => {
+    if (item.metadatos_especie?.descripcion_biologica) {
+      return {
+        descripcion_biologica: item.metadatos_especie.descripcion_biologica,
+        curiosidades: item.metadatos_especie.curiosidades || [],
+        mitos_y_leyendas_guayanesas: item.metadatos_especie.mitos || 'Protector de la selva.'
+      };
+    }
     return new Promise<any>((resolve) => {
       setTimeout(() => {
-        const nombreLower = (nombre || '').toLowerCase();
+        const nombreLower = (item.nombre_tradicional || '').toLowerCase();
         
         if (nombreLower.includes('jaguar') || nombreLower.includes('tigre') || nombreLower.includes('onza')) {
           resolve({
@@ -152,13 +158,13 @@ export default function RecordsScreen() {
         
         // Fallback genérico
         resolve({
-          descripcion_biologica: `El especimen catalogado como ${nombre || 'esta especie'} posee adaptaciones biológicas fascinantes para sobrevivir en los diversos y complejos ecosistemas del escudo guayanés.`,
+          descripcion_biologica: `El especimen catalogado como ${item.nombre_tradicional || 'esta especie'} posee adaptaciones biológicas fascinantes para sobrevivir en los diversos y complejos ecosistemas del escudo guayanés.`,
           curiosidades: [
             'Su presencia es un indicador biológico de la salud del ecosistema local.',
             'Forma parte de una intrincada red trófica que sostiene la biodiversidad de la región.',
             'Muchos de sus comportamientos y dinámicas poblacionales aún son objeto de estudio por biólogos locales.'
           ],
-          mitos_y_leyendas_guayanesas: `A través de las generaciones, las comunidades originarias de la Amazonía y Guayana han observado a ${nombre || 'esta especie'}, integrándola en su tradición oral como un espíritu protector de la selva y los ríos, enseñando el respeto por el equilibrio natural.`,
+          mitos_y_leyendas_guayanesas: `A través de las generaciones, las comunidades originarias de la Amazonía y Guayana han observado a ${item.nombre_tradicional || 'esta especie'}, integrándola en su tradición oral como un espíritu protector de la selva y los ríos, enseñando el respeto por el equilibrio natural.`,
         });
       }, 1500); // Simulamos 1.5s de delay para la IA
     });
@@ -184,34 +190,24 @@ export default function RecordsScreen() {
   };
 
   const renderRecordItem = ({ item }: { item: any }) => {
-    const date = new Date(item.created_at).toLocaleDateString('es-VE', { month: 'short', day: 'numeric', year: 'numeric' });
-    
     return (
       <TouchableOpacity onPress={() => setSelectedRecord(item)} style={styles.cardContainer}>
         <BlurView intensity={40} tint="dark" style={styles.cardBlur}>
           <Image source={{ uri: item.media_url }} style={styles.cardImage} />
           <View style={styles.cardContent}>
-            <Text style={styles.cardTitle} numberOfLines={1}>{item.nombre_tradicional}</Text>
+            <View style={styles.speciesHeader}>
+              <Text style={styles.cardTitle} numberOfLines={1}>{item.nombre_tradicional}</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>{item.count} avistamientos</Text>
+              </View>
+            </View>
+            
             {item.nombre_cientifico ? (
               <Text style={styles.cardScientific} numberOfLines={1}>{item.nombre_cientifico}</Text>
             ) : null}
-            {item.descripcion ? (
-              <Text style={styles.cardComment} numberOfLines={2}>
-                <Text style={{fontWeight: 'bold'}}>Mi nota: </Text>
-                {item.descripcion}
-              </Text>
-            ) : null}
+
             <View style={styles.cardFooter}>
-              <View style={styles.dateBadge}>
-                <Ionicons name="calendar-outline" size={12} color="#a4ff44" />
-                <Text style={styles.dateText}>{date}</Text>
-              </View>
-              {item.ia_certeza ? (
-                <View style={styles.aiBadge}>
-                  <Ionicons name="sparkles" size={10} color="#000" />
-                  <Text style={styles.aiText}>IA</Text>
-                </View>
-              ) : null}
+              {/* Pie de tarjeta simplificado sin etiquetas de estado */}
             </View>
           </View>
         </BlurView>
@@ -226,7 +222,7 @@ export default function RecordsScreen() {
       <View style={styles.bgBlob2} />
 
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Mi Expedición</Text>
+        <Text style={styles.headerTitle}>Registros</Text>
         <Text style={styles.headerSubtitle}>Tus descubrimientos en la Guayana</Text>
       </View>
 
@@ -248,8 +244,8 @@ export default function RecordsScreen() {
         </View>
       ) : (
         <FlatList
-          data={filteredRecords}
-          keyExtractor={(item) => item.id.toString()}
+          data={speciesCategories}
+          keyExtractor={(item) => item.nombre_cientifico || item.id.toString()}
           renderItem={renderRecordItem}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -265,16 +261,22 @@ export default function RecordsScreen() {
       >
         <BlurView intensity={90} tint="dark" style={styles.modalOverlay}>
           {selectedRecord && (
-            <View style={styles.modalContent}>
-              <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
+            <View style={styles.folderModal}>
+              {/* Pestaña de Carpeta */}
+              <View style={styles.folderTab}>
+                <Ionicons name="folder-open" size={20} color="#a4ff44" />
+                <Text style={styles.folderTabText}>EXPEDIENTE CIENTÍFICO</Text>
+                <TouchableOpacity 
+                  style={styles.closeFolderBtn} 
+                  onPress={() => setSelectedRecord(null)}
+                >
+                  <Ionicons name="close" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={styles.folderContent}>
                 <View style={styles.modalImageContainer}>
                   <Image source={{ uri: selectedRecord.media_url }} style={styles.modalImage} />
-                  <TouchableOpacity 
-                    style={styles.closeModalBtn} 
-                    onPress={() => setSelectedRecord(null)}
-                  >
-                    <Ionicons name="close" size={24} color="#fff" />
-                  </TouchableOpacity>
                   
                   <View style={styles.modalHeaderInfo}>
                     <BlurView intensity={60} tint="dark" style={styles.modalHeaderBlur}>
@@ -304,18 +306,10 @@ export default function RecordsScreen() {
                   {/* Datos Enriquecidos IA */}
                   {loadingEnrichedData ? (
                     <View style={styles.cultureSection}>
-                      {[1, 2].map((key) => (
-                        <View key={key} style={styles.skeletonCard}>
-                          <View style={styles.skeletonTitle} />
-                          <View style={styles.skeletonText} />
-                          <View style={styles.skeletonText} />
-                          <View style={styles.skeletonTextShort} />
-                        </View>
-                      ))}
+                      <ActivityIndicator color="#a4ff44" style={{ marginVertical: 40 }} />
                     </View>
                   ) : enrichedData ? (
                     <View style={styles.cultureSection}>
-                      
                         <View style={styles.cultureCard}>
                           <View style={styles.cultureHeader}>
                             <Ionicons name="leaf-outline" size={20} color="#00e676" />
@@ -344,12 +338,33 @@ export default function RecordsScreen() {
                           </View>
                           <Text style={styles.cultureText}>{enrichedData.mitos_y_leyendas_guayanesas}</Text>
                         </View>
-
                     </View>
                   ) : null}
+
+                    {/* Galería de Muestreos (Siempre visible si hay datos) */}
+                    <View style={styles.gallerySection}>
+                      <Text style={styles.galleryTitle}>Muestreos en la Base de Datos ({selectedRecord.allSightings?.length || 0})</Text>
+                      <View style={styles.galleryGrid}>
+                        {selectedRecord.allSightings?.map((sighting: any, idx: number) => {
+                          const dateStr = sighting.created_at ? new Date(sighting.created_at).toLocaleDateString() : 'Reciente';
+                          return (
+                            <View key={sighting.id || `sight-${idx}`} style={styles.galleryItem}>
+                              {sighting.media_url ? (
+                                <Image source={{ uri: sighting.media_url }} style={styles.galleryImage} />
+                              ) : (
+                                <View style={[styles.galleryImage, { backgroundColor: '#333' }]} />
+                              )}
+                              <View style={styles.sightingOverlay}>
+                                <Text style={styles.sightingDate}>{dateStr}</Text>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
                   
                   {selectedRecord.descripcion ? (
-                    <View style={[styles.cultureCard, {marginBottom: 40}]}>
+                    <View style={[styles.cultureCard, {marginTop: 20, marginBottom: 40}]}>
                       <Text style={styles.cultureTitle}>Notas del Avistamiento</Text>
                       <Text style={styles.cultureText}>{selectedRecord.descripcion}</Text>
                     </View>
@@ -441,12 +456,23 @@ const styles = StyleSheet.create({
   cardComment: {
     color: '#e0e0e0', fontSize: 13, fontStyle: 'italic', marginTop: 0, marginBottom: 8,
   },
-  cardFooter: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+  speciesHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2,
   },
-  dateBadge: {
+  countBadge: {
+    backgroundColor: 'rgba(164, 255, 68, 0.2)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6,
+  },
+  countText: {
+    color: '#a4ff44', fontSize: 10, fontWeight: 'bold',
+  },
+  specimenBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  },
+  specimenText: {
+    color: '#888', fontSize: 11,
+  },
+  cardFooter: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12,
   },
   dateText: {
     color: '#e0e0e0', fontSize: 11, fontWeight: '600',
@@ -459,15 +485,61 @@ const styles = StyleSheet.create({
     color: '#000', fontSize: 10, fontWeight: 'bold',
   },
 
-  // Modal Styles
+  // Galería por especie
+  gallerySection: { marginTop: 20, paddingHorizontal: 4 },
+  galleryTitle: { color: '#a4ff44', fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
+  galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  galleryItem: { width: (Dimensions.get('window').width - 60) / 3, height: (Dimensions.get('window').width - 60) / 3, borderRadius: 10, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.05)' },
+  galleryImage: { width: '100%', height: '100%' },
+  sightingOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 4, backgroundColor: 'rgba(0,0,0,0.5)' },
+  sightingDate: { color: '#fff', fontSize: 9, textAlign: 'center' },
+
+  // Modal Styles (Folder style)
   modalOverlay: {
     flex: 1,
+    justifyContent: 'flex-end',
   },
-  modalContent: {
-    flex: 1, backgroundColor: 'transparent',
+  folderModal: {
+    backgroundColor: '#051310',
+    marginTop: 60,
+    flex: 1,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(164, 255, 68, 0.2)',
+  },
+  folderTab: {
+    backgroundColor: '#051310',
+    height: 40,
+    width: 200,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    gap: 10,
+    borderTopLeftRadius: 15,
+    borderTopRightRadius: 15,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(164, 255, 68, 0.2)',
+    position: 'absolute',
+    top: -40,
+    left: 0,
+  },
+  folderTabText: {
+    color: '#a4ff44',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  closeFolderBtn: {
+    marginLeft: 'auto',
+  },
+  folderContent: {
+    flex: 1,
   },
   modalImageContainer: {
-    width: '100%', height: 350, position: 'relative',
+    width: '100%', height: 300, position: 'relative',
   },
   modalImage: {
     width: '100%', height: '100%', resizeMode: 'cover',

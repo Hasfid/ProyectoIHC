@@ -19,9 +19,9 @@ export default function TabLayout() {
         tabBarIndicatorStyle: { backgroundColor: '#004d40', top: 0, height: 3 },
         tabBarStyle: {
           backgroundColor: '#fff',
-          paddingBottom: Platform.OS === 'ios' ? insets.bottom + 35 : 45,
-          paddingTop: 12,
-          height: Platform.OS === 'ios' ? 100 + insets.bottom : 105,
+          paddingBottom: Platform.OS === 'ios' ? insets.bottom + 10 : 15,
+          paddingTop: 10,
+          height: Platform.OS === 'ios' ? 75 + insets.bottom : 80,
         },
         tabBarShowIcon: true,
         tabBarShowLabel: true,
@@ -52,9 +52,16 @@ export default function TabLayout() {
         }}
       />
       <MaterialTopTabs.Screen
+        name="challenge"
+        options={{
+          title: 'Retos',
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "trophy" : "trophy-outline"} size={24} color={color} />,
+        }}
+      />
+      <MaterialTopTabs.Screen
         name="records"
         options={{
-          title: 'Mis Registros',
+          title: 'Registros',
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "library" : "library-outline"} size={24} color={color} />,
         }}
       />
