@@ -1,3 +1,13 @@
+/**
+ * chat.tsx — Lista de conversaciones (bandeja de mensajes).
+ *
+ * Agrupa mensajes por interlocutor, muestra el último mensaje y
+ * soporta eliminación local de chats via AsyncStorage (sin borrar
+ * mensajes del servidor). Refresca al volver con useFocusEffect.
+ *
+ * @module app/chat
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
@@ -8,11 +18,14 @@ import {
   Image,
   ActivityIndicator,
   RefreshControl,
+  Alert,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
+/** Resumen de una conversación con el último mensaje y perfil */
 type Conversation = {
   other_user_id: string;
   last_message: string;
@@ -51,6 +64,10 @@ export default function ChatListScreen() {
     }
   };
 
+  /**
+   * Construye la lista de conversaciones agrupando mensajes por interlocutor.
+   * Filtra chats ocultos localmente y enriquece con perfiles.
+   */
   const fetchConversations = async (myId: string) => {
     try {
       // 1. Obtener todos los mensajes donde soy remitente o destinatario
@@ -67,11 +84,22 @@ export default function ChatListScreen() {
         return;
       }
 
-      // 2. Agrupar por el "otro usuario" y quedarnos con el último mensaje
+      // 2. Obtener chats ocultos de AsyncStorage
+      const hiddenChatsRaw = await AsyncStorage.getItem(`hidden_chats_${myId}`);
+      const hiddenChats = hiddenChatsRaw ? JSON.parse(hiddenChatsRaw) : {};
+
+      // 3. Agrupar por el "otro usuario" y quedarnos con el último mensaje
       const convsMap = new Map<string, any>();
       
       messages.forEach(msg => {
         const otherId = msg.remitente_id === myId ? msg.destinatario_id : msg.remitente_id;
+        
+        // Verificar si el chat está oculto y si hay mensajes nuevos
+        const hideTime = hiddenChats[otherId];
+        if (hideTime && new Date(msg.created_at) <= new Date(hideTime)) {
+          return; // Ignorar este mensaje si es anterior a la limpieza
+        }
+
         if (!convsMap.has(otherId)) {
           convsMap.set(otherId, {
             other_user_id: otherId,
@@ -81,7 +109,12 @@ export default function ChatListScreen() {
         }
       });
 
-      // 3. Obtener perfiles de los otros usuarios
+      if (convsMap.size === 0) {
+        setConversations([]);
+        return;
+      }
+
+      // 4. Obtener perfiles de los otros usuarios
       const otherUserIds = Array.from(convsMap.keys());
       const { data: profiles } = await supabase
         .from('perfiles')
@@ -108,6 +141,40 @@ export default function ChatListScreen() {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  /** Oculta un chat localmente guardando timestamp en AsyncStorage */
+  const deleteChatLocally = async (otherUserId: string) => {
+    if (!currentUserId) return;
+    
+    Alert.alert(
+      'Eliminar chat',
+      '¿Deseas eliminar esta conversación para ti? Los mensajes no se borrarán para la otra persona.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const storageKey = `hidden_chats_${currentUserId}`;
+              const hiddenChatsRaw = await AsyncStorage.getItem(storageKey);
+              const hiddenChats = hiddenChatsRaw ? JSON.parse(hiddenChatsRaw) : {};
+              
+              // Guardar la fecha actual como marca de "visto/borrado"
+              hiddenChats[otherUserId] = new Date().toISOString();
+              
+              await AsyncStorage.setItem(storageKey, JSON.stringify(hiddenChats));
+              
+              // Actualizar lista
+              fetchConversations(currentUserId);
+            } catch (err) {
+              console.error('Error hiding chat:', err);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const onRefresh = () => {
@@ -141,6 +208,7 @@ export default function ChatListScreen() {
     </TouchableOpacity>
   );
 
+  /** Formatea timestamp: hora si es hoy, fecha si es anterior */
   const getTimeAgo = (dateStr: string) => {
     const now = new Date();
     const date = new Date(dateStr);

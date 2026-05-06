@@ -1,3 +1,16 @@
+/**
+ * @module TabLayout
+ * Configuración de la navegación por pestañas (Tabs) ubicada en la parte inferior.
+ * Utiliza un `MaterialTopTabNavigator` posicionado abajo para permitir swipe entre pantallas.
+ * 
+ * Pestañas:
+ * - Descubrir (index): Mapa interactivo.
+ * - Observatorio: Feed social y streaming en vivo.
+ * - Escáner: Identificación de especies por cámara.
+ * - Registros: Historial de avistamientos.
+ * - Perfil: Gestión de usuario y borradores offline.
+ */
+
 import { withLayoutContext } from 'expo-router';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +20,7 @@ import { View, StyleSheet, Platform } from 'react-native';
 const { Navigator } = createMaterialTopTabNavigator();
 const MaterialTopTabs = withLayoutContext(Navigator);
 
+/** Componente principal de navegación por pestañas */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   
@@ -49,13 +63,6 @@ export default function TabLayout() {
         options={{
           title: 'Escáner',
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
-        }}
-      />
-      <MaterialTopTabs.Screen
-        name="challenge"
-        options={{
-          title: 'Retos',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "trophy" : "trophy-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen

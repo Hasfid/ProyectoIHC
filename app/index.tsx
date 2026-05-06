@@ -1,3 +1,13 @@
+/**
+ * index.tsx — Punto de entrada de la app.
+ *
+ * Verifica la sesión de Supabase Auth y redirige:
+ * - Sin sesión → `/login`
+ * - Con sesión → `/(tabs)`
+ *
+ * @module app/index
+ */
+
 import { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { supabase } from '../lib/supabase';

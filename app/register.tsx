@@ -1,3 +1,13 @@
+/**
+ * register.tsx — Pantalla de registro de usuario.
+ *
+ * Validaciones: formato email, username alfanumérico, contraseña ≥8 chars.
+ * Verifica unicidad de username contra tabla `perfiles` antes de registrar.
+ * Soporta flujo con y sin confirmación de email (según config de Supabase).
+ *
+ * @module app/register
+ */
+
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -12,6 +22,7 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  /** Valida campos, verifica username único y registra en Supabase Auth */
   const handleRegister = async () => {
     if (!email || !password || !username) {
       Alert.alert('Error', 'Por favor llena los campos requeridos (Correo, Usuario, Contraseña)');

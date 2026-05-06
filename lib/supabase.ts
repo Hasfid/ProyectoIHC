@@ -1,3 +1,13 @@
+/**
+ * supabase.ts — Cliente Supabase para la plataforma Ecos.
+ *
+ * Configura el cliente con un adaptador de almacenamiento seguro para SSR
+ * que evita errores cuando `window` no existe (p.ej. durante prerenderizado
+ * en Expo Web). En contextos con DOM disponible, delega a AsyncStorage.
+ *
+ * @module lib/supabase
+ */
+
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
@@ -5,8 +15,15 @@ import { Platform } from 'react-native';
 const SUPABASE_URL = 'https://lurpzudnafegijlteoym.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_xrr8bYspSYSFmkH2V3IG3A_NJ4QAF7y';
 
-// Adaptador para evitar errores de SSR (Server-Side Rendering) en la Web, 
-// ya que 'window' no existe en el servidor de Node de Expo.
+// ── Adaptador SSR-safe ───────────────────────────────────────────────────────
+
+/**
+ * Adaptador de storage compatible con SSR.
+ *
+ * En entornos web sin `window` (prerenderizado de Node), devuelve valores
+ * vacíos para evitar el crash de AsyncStorage. En el resto de plataformas
+ * (mobile y web con DOM), delega normalmente a AsyncStorage.
+ */
 const SSRStorageAdapter = {
   getItem: (key: string) => {
     if (Platform.OS === 'web' && typeof window === 'undefined') {
@@ -28,6 +45,9 @@ const SSRStorageAdapter = {
   },
 };
 
+// ── Exportación ──────────────────────────────────────────────────────────────
+
+/** Instancia singleton del cliente Supabase configurada para Ecos */
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     storage: SSRStorageAdapter,

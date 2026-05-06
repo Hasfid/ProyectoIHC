@@ -1,12 +1,28 @@
+/**
+ * _layout.tsx — Root layout con auth guard y sincronización offline.
+ *
+ * Responsabilidades:
+ * - Escucha cambios de autenticación y redirige automáticamente
+ *   (login/register ↔ tabs) según el estado de la sesión.
+ * - Inicializa el hook de sincronización offline ({@link useOfflineSync}).
+ * - Define el stack de navegación con transiciones por pantalla.
+ *
+ * @module app/_layout
+ */
+
 import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
+import { useOfflineSync } from "../lib/useOfflineSync";
 import { View, ActivityIndicator } from "react-native";
 
 export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
   const [isReady, setIsReady] = useState(false);
+
+  // Sincronizar borradores offline cuando vuelva la conexión (solo mobile)
+  useOfflineSync();
 
   useEffect(() => {
     // Escuchar el estado de autenticación
@@ -49,7 +65,7 @@ export default function RootLayout() {
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
       <Stack.Screen name="create-record" options={{ presentation: 'modal', headerShown: false }} />
-      <Stack.Screen name="notifications" options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ presentation: 'card', headerShown: true }} />
       <Stack.Screen name="social" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="user-profile" options={{ animation: 'slide_from_right' }} />
     </Stack>

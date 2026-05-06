@@ -1,3 +1,12 @@
+/**
+ * followers-list.tsx — Lista genérica de seguidores o seguidos.
+ *
+ * Recibe `userId` y `type` ('followers' | 'following') por params.
+ * Muestra la lista con botón de follow/unfollow inline.
+ *
+ * @module app/followers-list
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -13,6 +22,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { getFollowers, getFollowing, followUser, unfollowUser, getFollowingIds } from '../lib/follows';
 
+/** Usuario en una lista de seguidores/seguidos */
 type FollowUser = {
   id: string;
   username: string;
@@ -37,6 +47,7 @@ export default function FollowersListScreen() {
     if (userId && type) loadData();
   }, [userId, type]);
 
+  /** Carga la lista de usuarios y los IDs que el usuario actual sigue */
   const loadData = async () => {
     setLoading(true);
     try {
@@ -58,6 +69,7 @@ export default function FollowersListScreen() {
     }
   };
 
+  /** Alterna follow/unfollow con guard de concurrencia */
   const toggleFollow = async (targetUserId: string) => {
     if (!currentUserId || togglingFollow.has(targetUserId)) return;
 
@@ -87,6 +99,7 @@ export default function FollowersListScreen() {
     }
   };
 
+  /** Navega al perfil público (excepto si es el propio usuario) */
   const navigateToProfile = (id: string) => {
     if (id === currentUserId) return; // No navegar a mi propio perfil público
     router.push({ pathname: '/user-profile', params: { userId: id } });

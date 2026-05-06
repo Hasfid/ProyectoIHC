@@ -1,3 +1,12 @@
+/**
+ * @module ObservatoryScreen
+ * Pantalla de comunidad que integra:
+ * - Streaming en vivo (Video MP4/HLS).
+ * - Feed de publicaciones globales de usuarios.
+ * - Sistema de retos (Challenges).
+ * - Interacciones de seguimiento (Follow/Unfollow) integradas en el feed.
+ */
+
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useState, useCallback } from 'react';
@@ -17,6 +26,8 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { supabase } from '../../lib/supabase';
 import { followUser, unfollowUser, getFollowingIds } from '../../lib/follows';
+import Challenges from '../../components/Challenges';
+import { Modal } from 'react-native';
 
 // ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
 // VIDEO ACTUAL: URL directa a MP4 en Supabase Storage
@@ -54,9 +65,11 @@ export default function ObservatoryScreen() {
   const [newPostDesc, setNewPostDesc] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
+  const [showChallenges, setShowChallenges] = useState(false);
 
   console.log('Observatory Screen Render - Posts:', posts.length);
 
+  /** Obtiene las publicaciones más recientes combinadas con los perfiles de autor */
   const fetchPosts = async () => {
     try {
       console.log('fetchPosts started...');
@@ -142,6 +155,7 @@ export default function ObservatoryScreen() {
     setRefreshing(false);
   };
 
+  /** Alterna el estado de seguimiento de un usuario desde el feed */
   const handleToggleFollow = async (targetUserId: string) => {
     if (!currentUserId) return;
     try {
@@ -162,6 +176,7 @@ export default function ObservatoryScreen() {
     }
   };
 
+  /** Crea una nueva publicación de texto en la comunidad */
   const handleCreatePost = async () => {
     if (!newPostTitle.trim() || !newPostDesc.trim()) {
       Alert.alert('Error', 'Completa el título y la descripción.');
@@ -221,6 +236,7 @@ export default function ObservatoryScreen() {
     );
   };
 
+  /** Calcula el tiempo transcurrido de forma amigable (es-VE) */
   const getTimeAgo = (dateStr: string) => {
     const now = new Date();
     const date = new Date(dateStr);
@@ -245,7 +261,21 @@ export default function ObservatoryScreen() {
     <View style={styles.container}>
       <View style={styles.customHeader}>
         <Text style={styles.customHeaderTitle}>Observatorio</Text>
+        <TouchableOpacity 
+          style={styles.roundChallengeBtn} 
+          onPress={() => setShowChallenges(true)}
+        >
+          <Ionicons name="trophy" size={24} color="#a4ff44" />
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={showChallenges}
+        animationType="slide"
+        onRequestClose={() => setShowChallenges(false)}
+      >
+        <Challenges onClose={() => setShowChallenges(false)} />
+      </Modal>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -425,6 +455,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 10,
     backgroundColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
     position: 'absolute',
     top: 0,
     left: 0,
@@ -435,6 +467,23 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#111',
+  },
+  roundChallengeBtn: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(5, 19, 16, 0.85)', // Fondo más oscuro
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(164, 255, 68, 0.4)', // Borde un poco más definido
+    marginLeft: 'auto',
+    // Sombra para dar profundidad
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   scrollContent: {
     paddingTop: 100,

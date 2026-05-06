@@ -1,3 +1,8 @@
+/**
+ * @module ScannerScreen
+ * Vista de pestaña que envuelve el componente de cámara/escáner.
+ */
+
 import { StyleSheet, View } from 'react-native';
 import Scanner from '../../components/Scanner';
 

@@ -1,3 +1,12 @@
+/**
+ * discover-users.tsx — Pantalla dedicada de descubrimiento de usuarios.
+ *
+ * Muestra usuarios sugeridos con búsqueda por nombre. Permite follow/unfollow
+ * inline con feedback de loading por usuario individual.
+ *
+ * @module app/discover-users
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -17,6 +26,7 @@ import { discoverUsers, searchUsers, followUser, unfollowUser, getFollowingIds }
 
 const { width } = Dimensions.get('window');
 
+/** Perfil público para tarjetas de descubrimiento */
 type UserProfile = {
   id: string;
   username: string;
@@ -46,6 +56,7 @@ export default function DiscoverUsersScreen() {
     await loadUsers(session.user.id, '');
   };
 
+  /** Carga usuarios sugeridos o resultados de búsqueda */
   const loadUsers = async (userId: string, query: string) => {
     setLoading(true);
     try {
@@ -62,6 +73,7 @@ export default function DiscoverUsersScreen() {
     }
   };
 
+  /** Búsqueda con debounce implícito (400ms via timeout en useCallback) */
   const handleSearch = useCallback((text: string) => {
     setSearchQuery(text);
     if (currentUserId) {
@@ -73,6 +85,7 @@ export default function DiscoverUsersScreen() {
     }
   }, [currentUserId]);
 
+  /** Alterna follow/unfollow con guard de concurrencia por usuario */
   const toggleFollow = async (targetUserId: string) => {
     if (!currentUserId || togglingFollow.has(targetUserId)) return;
 

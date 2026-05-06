@@ -1,7 +1,18 @@
+/**
+ * @module RecordsScreen
+ * Galería global de avistamientos de la comunidad.
+ * 
+ * Funcionalidades:
+ * - Filtros taxonómicos (Todos, Animales, Plantas).
+ * - Búsqueda por nombre común o científico.
+ * - Enriquecimiento de datos vía "IA" (Mock/Fallback) con mitos y leyendas guayanesas.
+ * - Modo "Carpeta Científica" para visualizar detalles técnicos de cada especie.
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet, View, Text, FlatList, Image, TouchableOpacity,
-  Modal, ActivityIndicator, ScrollView, Platform, Dimensions
+  Modal, ActivityIndicator, ScrollView, Platform, Dimensions, TextInput, Alert
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,6 +29,10 @@ export default function RecordsScreen() {
 
   const [enrichedData, setEnrichedData] = useState<any>(null);
   const [loadingEnrichedData, setLoadingEnrichedData] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeSighting, setActiveSighting] = useState<any | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedRecord) {
@@ -32,7 +47,40 @@ export default function RecordsScreen() {
     }
   }, [selectedRecord]);
 
+  const handleDeleteRecord = async (recordId: string) => {
+    Alert.alert(
+      "Eliminar Registro",
+      "¿Estás seguro de que deseas eliminar este avistamiento? Esta acción no se puede deshacer.",
+      [
+        { text: "Cancelar", style: "cancel" },
+        { 
+          text: "Eliminar", 
+          style: "destructive", 
+          onPress: async () => {
+            try {
+              const { error } = await supabase
+                .from('registros')
+                .delete()
+                .eq('id', recordId);
+              
+              if (error) throw error;
+              
+              // Actualizar UI
+              setRecords(prev => prev.filter(r => r.id !== recordId));
+              setSelectedRecord(null);
+              setActiveSighting(null);
+              Alert.alert("Éxito", "Registro eliminado correctamente.");
+            } catch (err: any) {
+              Alert.alert("Error", "No se pudo eliminar el registro: " + err.message);
+            }
+          }
+        }
+      ]
+    );
+  };
+
   // ─── Fetch de Datos ────────────────────────────────────────────────────────
+  /** Obtiene todos los registros de la base de datos ordenados por fecha */
   const fetchRecords = async () => {
     setLoading(true);
     try {
@@ -55,11 +103,15 @@ export default function RecordsScreen() {
   useFocusEffect(
     useCallback(() => {
       fetchRecords();
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setCurrentUserId(session?.user?.id || null);
+      });
     }, [])
   );
 
   // ─── Lógica de Mock y Filtrado ─────────────────────────────────────────────
   
+  /** Determina si un espécimen es animal basándose en su alimentación o nombre (heuristic) */
   const isAnimal = (item: any) => {
     const alimentacion = (item.alimentacion || '').toLowerCase();
     if (alimentacion.includes('carnívoro') || alimentacion.includes('herbívoro') || alimentacion.includes('omnívoro')) {
@@ -74,11 +126,17 @@ export default function RecordsScreen() {
   };
 
   const filteredRecords = records.filter(item => {
-    if (filter === 'Todos') return true;
-    const isAnim = isAnimal(item);
-    if (filter === 'Animales') return isAnim;
-    if (filter === 'Plantas') return !isAnim;
-    return true;
+    // Filtro por tipo (Animal/Planta)
+    const matchesFilter = filter === 'Todos' || (filter === 'Animales' ? isAnimal(item) : !isAnimal(item));
+    if (!matchesFilter) return false;
+
+    // Filtro por búsqueda
+    if (searchQuery.trim() === '') return true;
+    const query = searchQuery.toLowerCase();
+    return (
+      (item.nombre_tradicional || '').toLowerCase().includes(query) ||
+      (item.nombre_cientifico || '').toLowerCase().includes(query)
+    );
   });
 
   // Agrupar por nombre científico único para mayor precisión taxonómica
@@ -92,6 +150,7 @@ export default function RecordsScreen() {
       };
     });
 
+  /** Obtiene datos adicionales (biología, mitos) de la DB o vía Mock/IA */
   const getEnrichedData = async (item: any) => {
     if (item.metadatos_especie?.descripcion_biologica) {
       return {
@@ -191,7 +250,15 @@ export default function RecordsScreen() {
 
   const renderRecordItem = ({ item }: { item: any }) => {
     return (
-      <TouchableOpacity onPress={() => setSelectedRecord(item)} style={styles.cardContainer}>
+      <TouchableOpacity 
+        onPress={() => {
+          setSelectedRecord(item);
+          setActiveSighting(item); // Por defecto el primero
+        }} 
+        onLongPress={() => setPreviewImage(item.media_url)}
+        delayLongPress={300}
+        style={styles.cardContainer}
+      >
         <BlurView intensity={40} tint="dark" style={styles.cardBlur}>
           <Image source={{ uri: item.media_url }} style={styles.cardImage} />
           <View style={styles.cardContent}>
@@ -224,6 +291,22 @@ export default function RecordsScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Registros</Text>
         <Text style={styles.headerSubtitle}>Tus descubrimientos en la Guayana</Text>
+      </View>
+
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="rgba(164, 255, 68, 0.5)" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar especie o nombre..."
+          placeholderTextColor="rgba(255,255,255,0.4)"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.filterRow}>
@@ -275,8 +358,15 @@ export default function RecordsScreen() {
               </View>
 
               <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={styles.folderContent}>
-                <View style={styles.modalImageContainer}>
-                  <Image source={{ uri: selectedRecord.media_url }} style={styles.modalImage} />
+                <TouchableOpacity 
+                  activeOpacity={0.9}
+                  onPress={() => setPreviewImage(activeSighting?.media_url || selectedRecord.media_url)}
+                  style={styles.modalImageContainer}
+                >
+                  <Image 
+                    source={{ uri: activeSighting?.media_url || selectedRecord.media_url }} 
+                    style={styles.modalImage} 
+                  />
                   
                   <View style={styles.modalHeaderInfo}>
                     <BlurView intensity={60} tint="dark" style={styles.modalHeaderBlur}>
@@ -285,8 +375,17 @@ export default function RecordsScreen() {
                          <Text style={styles.modalScientific}>{selectedRecord.nombre_cientifico}</Text>
                       )}
                     </BlurView>
+
+                    {currentUserId === activeSighting?.usuario_id && (
+                      <TouchableOpacity 
+                        style={styles.deleteBtn} 
+                        onPress={() => handleDeleteRecord(activeSighting.id)}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#ff5252" />
+                      </TouchableOpacity>
+                    )}
                   </View>
-                </View>
+                </TouchableOpacity>
 
                 <View style={styles.modalBody}>
                   {/* Stats Base */}
@@ -297,9 +396,9 @@ export default function RecordsScreen() {
                       <Text style={styles.statValue}>{selectedRecord.peligrosidad || 'N/A'}</Text>
                     </View>
                     <View style={styles.statBox}>
-                      <Ionicons name="restaurant-outline" size={18} color="#a4ff44" />
-                      <Text style={styles.statLabel}>Alimentación</Text>
-                      <Text style={styles.statValue}>{selectedRecord.alimentacion || 'N/A'}</Text>
+                      <Ionicons name="earth-outline" size={18} color="#a4ff44" />
+                      <Text style={styles.statLabel}>Endemismo</Text>
+                      <Text style={styles.statValue}>{selectedRecord.alimentacion || 'No'}</Text>
                     </View>
                   </View>
 
@@ -348,7 +447,16 @@ export default function RecordsScreen() {
                         {selectedRecord.allSightings?.map((sighting: any, idx: number) => {
                           const dateStr = sighting.created_at ? new Date(sighting.created_at).toLocaleDateString() : 'Reciente';
                           return (
-                            <View key={sighting.id || `sight-${idx}`} style={styles.galleryItem}>
+                            <TouchableOpacity 
+                              key={sighting.id || `sight-${idx}`} 
+                              style={[
+                                styles.galleryItem, 
+                                activeSighting?.id === sighting.id && styles.galleryItemActive
+                              ]}
+                              onPress={() => setActiveSighting(sighting)}
+                              onLongPress={() => setPreviewImage(sighting.media_url)}
+                              delayLongPress={250}
+                            >
                               {sighting.media_url ? (
                                 <Image source={{ uri: sighting.media_url }} style={styles.galleryImage} />
                               ) : (
@@ -357,16 +465,21 @@ export default function RecordsScreen() {
                               <View style={styles.sightingOverlay}>
                                 <Text style={styles.sightingDate}>{dateStr}</Text>
                               </View>
-                            </View>
+                            </TouchableOpacity>
                           );
                         })}
                       </View>
                     </View>
                   
-                  {selectedRecord.descripcion ? (
+                  {(activeSighting?.descripcion || selectedRecord.descripcion) ? (
                     <View style={[styles.cultureCard, {marginTop: 20, marginBottom: 40}]}>
                       <Text style={styles.cultureTitle}>Notas del Avistamiento</Text>
-                      <Text style={styles.cultureText}>{selectedRecord.descripcion}</Text>
+                      <Text style={styles.cultureText}>
+                        {activeSighting?.descripcion || selectedRecord.descripcion}
+                      </Text>
+                      <Text style={styles.sightingDetailDate}>
+                        Registrado el: {activeSighting?.created_at ? new Date(activeSighting.created_at).toLocaleString() : 'Fecha no disponible'}
+                      </Text>
                     </View>
                   ) : <View style={{height: 40}} />}
 
@@ -375,6 +488,32 @@ export default function RecordsScreen() {
             </View>
           )}
         </BlurView>
+      </Modal>
+
+      {/* Quick Preview Modal (Long Press) */}
+      <Modal
+        visible={!!previewImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setPreviewImage(null)}
+      >
+        <TouchableOpacity 
+          style={styles.previewOverlay} 
+          activeOpacity={1} 
+          onPress={() => setPreviewImage(null)}
+        >
+          <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
+          <TouchableOpacity 
+            activeOpacity={1} 
+            style={styles.previewCard}
+            onPress={() => setPreviewImage(null)}
+          >
+            <Image source={{ uri: previewImage || '' }} style={styles.previewFullImage} />
+            <View style={styles.previewInfo}>
+              <Text style={styles.previewHint}>Tocar para cerrar</Text>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
@@ -401,11 +540,33 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: 0.5,
   },
-  headerSubtitle: {
-    fontSize: 14, color: '#a4ff44', marginTop: 4, fontWeight: '500',
+  headerSubtitle: { color: 'rgba(164, 255, 68, 0.7)', fontSize: 14, fontWeight: '500' },
+  
+  // Search
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginHorizontal: 20,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 46,
+    borderWidth: 1,
+    borderColor: 'rgba(164, 255, 68, 0.1)',
+    marginBottom: 16,
   },
-  filterRow: {
-    flexDirection: 'row', paddingHorizontal: 20, marginBottom: 16, gap: 10,
+  searchIcon: { marginRight: 8 },
+  searchInput: {
+    flex: 1,
+    color: '#fff',
+    fontSize: 15,
+  },
+
+  filterRow: { 
+    flexDirection: 'row', 
+    gap: 10, 
+    paddingHorizontal: 20, 
+    marginBottom: 20 
   },
   chip: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, overflow: 'hidden',
@@ -489,10 +650,63 @@ const styles = StyleSheet.create({
   gallerySection: { marginTop: 20, paddingHorizontal: 4 },
   galleryTitle: { color: '#a4ff44', fontSize: 16, fontWeight: 'bold', marginBottom: 15 },
   galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  galleryItem: { width: (Dimensions.get('window').width - 60) / 3, height: (Dimensions.get('window').width - 60) / 3, borderRadius: 10, overflow: 'hidden', backgroundColor: 'rgba(255,255,255,0.05)' },
+  galleryItem: {
+    width: '31%', aspectRatio: 1, borderRadius: 10, overflow: 'hidden',
+    backgroundColor: '#111', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  galleryItemActive: {
+    borderColor: '#a4ff44',
+    borderWidth: 2,
+  },
   galleryImage: { width: '100%', height: '100%' },
-  sightingOverlay: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 4, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sightingDate: { color: '#fff', fontSize: 9, textAlign: 'center' },
+  sightingOverlay: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)', paddingVertical: 2, alignItems: 'center',
+  },
+  sightingDate: { color: '#fff', fontSize: 8, fontWeight: 'bold' },
+  sightingDetailDate: { color: '#a4ff44', fontSize: 10, marginTop: 8, opacity: 0.8 },
+
+  // Quick Preview Styles
+  previewOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  previewCard: {
+    width: '90%',
+    aspectRatio: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(164, 255, 68, 0.3)',
+    shadowColor: '#a4ff44',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  previewFullImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  previewInfo: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 20,
+    alignItems: 'center',
+  },
+  previewHint: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    opacity: 0.6,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
 
   // Modal Styles (Folder style)
   modalOverlay: {
@@ -551,9 +765,16 @@ const styles = StyleSheet.create({
   },
   modalHeaderInfo: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
+    flexDirection: 'row', alignItems: 'center', paddingRight: 20,
   },
   modalHeaderBlur: {
-    padding: 20, paddingTop: 30, paddingBottom: 24,
+    flex: 1, padding: 20, paddingTop: 30, paddingBottom: 24,
+  },
+  deleteBtn: {
+    backgroundColor: 'rgba(255,82,82,0.15)',
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,82,82,0.3)',
   },
   modalTitle: {
     color: '#fff', fontSize: 28, fontWeight: 'bold',

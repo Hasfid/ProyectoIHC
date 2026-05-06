@@ -1,111 +1,300 @@
+/**
+ * drafts.ts — Sistema de borradores offline para registros de biodiversidad.
+ *
+ * Persiste capturas en AsyncStorage mientras el dispositivo está sin
+ * conexión. El ciclo de vida de un draft es:
+ *
+ *   pending_ai → (Gemini identifica) → pending_upload → (Supabase sube) → eliminado
+ *
+ * Si la IA falla por rate limit (429), el draft permanece en `pending_ai`
+ * para reintentar automáticamente. Si falla por otro motivo, se marca
+ * con `last_error` pero no cambia de estado.
+ *
+ * @module lib/drafts
+ */
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
+import { uploadMediaToSupabase } from './uploadMedia';
+import { identifySpecies } from './identifySpecies';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 
+// ── Constantes ───────────────────────────────────────────────────────────────
+
+/** Clave de AsyncStorage donde se guardan los borradores */
 const DRAFTS_KEY = 'ecos_offline_drafts';
 
+/** Pausa entre llamadas a Gemini para evitar HTTP 429 (ms) */
+const AI_THROTTLE_MS = 2000;
+
+// ── Tipos ────────────────────────────────────────────────────────────────────
+
+/** Estados posibles de un borrador en el pipeline offline */
+export type DraftStatus = 'pending_ai' | 'pending_upload' | 'failed';
+
+/** Estructura completa de un borrador persistido localmente */
 export type DraftRecord = {
   id: string;
+  status: DraftStatus;
   nombre_tradicional: string;
   nombre_cientifico: string;
   peligrosidad: string;
   alimentacion: string;
+  endemismo: string;
   descripcion: string;
-  media_uri: string; // URI local del archivo
+  media_uri: string;
   tipo_media: string;
   latitud: number;
   longitud: number;
+  ia_certeza?: number;
+  metadatos_especie?: object;
   created_at: string;
+  last_error?: string;
 };
 
-export const saveDraft = async (draft: Omit<DraftRecord, 'id' | 'created_at'>) => {
+// ── CRUD local ───────────────────────────────────────────────────────────────
+
+/**
+ * Guarda un nuevo borrador en almacenamiento local.
+ * @returns ID del draft creado, o `null` si falla
+ */
+export const saveDraft = async (
+  draft: Omit<DraftRecord, 'id' | 'created_at'>,
+): Promise<string | null> => {
   try {
-    const existingDraftsJson = await AsyncStorage.getItem(DRAFTS_KEY);
-    const existingDrafts: DraftRecord[] = existingDraftsJson ? JSON.parse(existingDraftsJson) : [];
-    
-    const newDraft: DraftRecord = {
-      ...draft,
-      id: Math.random().toString(36).substring(7),
-      created_at: new Date().toISOString(),
-    };
-    
-    const updatedDrafts = [newDraft, ...existingDrafts];
-    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(updatedDrafts));
-    return true;
+    const existing = await getDrafts();
+    const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
+    const newDraft: DraftRecord = { ...draft, id, created_at: new Date().toISOString() };
+    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify([newDraft, ...existing]));
+    return id;
   } catch (error) {
     console.error('Error saving draft:', error);
-    return false;
+    return null;
   }
 };
 
+/** Lee todos los borradores almacenados localmente. */
 export const getDrafts = async (): Promise<DraftRecord[]> => {
   try {
-    const draftsJson = await AsyncStorage.getItem(DRAFTS_KEY);
-    return draftsJson ? JSON.parse(draftsJson) : [];
+    const json = await AsyncStorage.getItem(DRAFTS_KEY);
+    return json ? JSON.parse(json) : [];
   } catch (error) {
     console.error('Error getting drafts:', error);
     return [];
   }
 };
 
-export const deleteDraft = async (id: string) => {
+/** Retorna la cantidad total de borradores. */
+export const getDraftCount = async (): Promise<number> => {
+  return (await getDrafts()).length;
+};
+
+/** Retorna conteo de drafts pendientes por fase. */
+export const getPendingCount = async (): Promise<{ ai: number; upload: number }> => {
+  const drafts = await getDrafts();
+  return {
+    ai: drafts.filter(d => d.status === 'pending_ai').length,
+    upload: drafts.filter(d => d.status === 'pending_upload').length,
+  };
+};
+
+/** Elimina un borrador por ID. */
+export const deleteDraft = async (id: string): Promise<void> => {
   try {
     const drafts = await getDrafts();
-    const updatedDrafts = drafts.filter(d => d.id !== id);
-    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(updatedDrafts));
+    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts.filter(d => d.id !== id)));
   } catch (error) {
     console.error('Error deleting draft:', error);
   }
 };
 
-// Función para intentar subir borradores cuando hay internet
-export const syncDrafts = async (onProgress?: (msg: string) => void) => {
+/** Actualiza campos parciales de un borrador existente. */
+const updateDraft = async (id: string, updates: Partial<DraftRecord>): Promise<void> => {
+  try {
+    const drafts = await getDrafts();
+    const updated = drafts.map(d => (d.id === id ? { ...d, ...updates } : d));
+    await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(updated));
+  } catch (error) {
+    console.error('Error updating draft:', error);
+  }
+};
+
+// ── Fase 1: Identificación con IA ───────────────────────────────────────────
+
+/**
+ * Intenta identificar la especie de un draft usando Gemini.
+ *
+ * Lee la imagen local como base64 (distinto flujo en web vs mobile),
+ * llama a {@link identifySpecies}, y si obtiene candidatos actualiza
+ * el draft a `pending_upload` con los datos de la IA.
+ *
+ * @returns `true` si la identificación fue exitosa (o se saltó sin candidatos)
+ */
+const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
+  try {
+    let base64 = '';
+
+    if (Platform.OS === 'web') {
+      const resp = await fetch(draft.media_uri);
+      const blob = await resp.blob();
+      base64 = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      base64 = await FileSystem.readAsStringAsync(draft.media_uri, { encoding: 'base64' });
+    }
+
+    const result = await identifySpecies(base64);
+    const best = result.candidates?.[0];
+
+    if (best) {
+      await updateDraft(draft.id, {
+        status: 'pending_upload',
+        nombre_tradicional: best.nombreTradicional || draft.nombre_tradicional,
+        nombre_cientifico: best.nombreCientifico || '',
+        peligrosidad: best.peligrosidad || '',
+        endemismo: best.endemismo || '',
+        ia_certeza: best.iaCerteza,
+        metadatos_especie: {
+          origen: 'scanner-offline',
+          descripcion_biologica: best.descripcionBiologica,
+          curiosidades: best.curiosidades,
+          mitos: best.mitos,
+          all_candidates: result.candidates,
+        },
+        last_error: undefined,
+      });
+      return true;
+    }
+
+    // IA no devolvió candidatos — subir igual sin identificación
+    await updateDraft(draft.id, {
+      status: 'pending_upload',
+      nombre_tradicional: draft.nombre_tradicional || 'Especie no identificada',
+      last_error: undefined,
+    });
+    return true;
+  } catch (err: any) {
+    console.error(`AI identification failed for "${draft.id}":`, err);
+
+    // Rate limit → no marcar como failed, reintentar después
+    if (err?.message?.includes('tráfico')) {
+      await updateDraft(draft.id, { last_error: 'Rate limit — reintentando' });
+      return false;
+    }
+
+    await updateDraft(draft.id, { last_error: err?.message });
+    return false;
+  }
+};
+
+// ── Fase 2: Subir a Supabase ────────────────────────────────────────────────
+
+/**
+ * Sube un draft identificado a Supabase (media + registro + notificación).
+ *
+ * Flujo:
+ * 1. Si la URI es local, sube el media al bucket
+ * 2. Inserta el registro en la tabla `registros`
+ * 3. Elimina el draft local
+ * 4. Crea una notificación de sincronización
+ *
+ * @returns `true` si todo el flujo fue exitoso
+ */
+const uploadDraft = async (draft: DraftRecord, userId: string): Promise<boolean> => {
+  try {
+    let mediaUrl = draft.media_uri;
+    if (!draft.media_uri.startsWith('http')) {
+      const mimeType = draft.tipo_media === 'video' ? 'video/mp4' : 'image/jpeg';
+      mediaUrl = await uploadMediaToSupabase(draft.media_uri, mimeType);
+    }
+
+    const { error } = await supabase.from('registros').insert({
+      usuario_id: userId,
+      nombre_tradicional: draft.nombre_tradicional,
+      nombre_cientifico: draft.nombre_cientifico,
+      peligrosidad: draft.peligrosidad,
+      alimentacion: draft.endemismo,
+      descripcion: draft.descripcion,
+      media_url: mediaUrl,
+      tipo_media: draft.tipo_media,
+      latitud: draft.latitud,
+      longitud: draft.longitud,
+      ia_certeza: draft.ia_certeza,
+      metadatos_especie: draft.metadatos_especie || { sync: 'offline' },
+    });
+
+    if (error) throw error;
+
+    await deleteDraft(draft.id);
+
+    await supabase.from('notificaciones').insert({
+      usuario_id: userId,
+      titulo: '📡 Registro sincronizado',
+      mensaje: `"${draft.nombre_tradicional}" se subió desde modo offline.`,
+      tipo: 'sincronizacion',
+    });
+
+    return true;
+  } catch (err: any) {
+    console.error(`Upload failed for "${draft.id}":`, err);
+    await updateDraft(draft.id, { last_error: err?.message });
+    return false;
+  }
+};
+
+// ── Sincronización completa ─────────────────────────────────────────────────
+
+/**
+ * Ejecuta el pipeline completo de sincronización offline.
+ *
+ * Llamada por {@link useOfflineSync} cuando detecta conexión.
+ * Procesa primero la fase de IA y luego la de subida, con throttling
+ * entre llamadas para evitar rate limiting.
+ *
+ * @param onProgress - Callback opcional para reportar progreso al UI
+ * @returns Conteo de drafts identificados, subidos y fallidos
+ */
+export const syncDrafts = async (
+  onProgress?: (msg: string) => void,
+): Promise<{ identified: number; uploaded: number; failed: number }> => {
   const drafts = await getDrafts();
-  if (drafts.length === 0) return;
+  if (drafts.length === 0) return { identified: 0, uploaded: 0, failed: 0 };
 
   const { data: { session } } = await supabase.auth.getSession();
   const userId = session?.user?.id;
 
-  for (const draft of drafts) {
-    try {
-      if (onProgress) onProgress(`Subiendo "${draft.nombre_tradicional}"...`);
-      
-      // 1. Aquí idealmente deberíamos subir el archivo local a Supabase Storage
-      // Pero como la media_uri es local, necesitamos la función de subida.
-      // Por simplicidad en este paso, asumimos que el usuario ya subió la media o la subiremos ahora.
-      // NOTA: Para una implementación real offline total, se guardaría el archivo en el sistema de archivos local.
-      
-      // Si la URI ya es una URL de Supabase, procedemos. 
-      // Si es local, este paso fallaría sin internet, por lo que el draft permanecería.
-      
-      const { error } = await supabase.from('registros').insert({
-        usuario_id: userId,
-        nombre_tradicional: draft.nombre_tradicional,
-        nombre_cientifico: draft.nombre_cientifico,
-        peligrosidad: draft.peligrosidad,
-        alimentacion: draft.alimentacion,
-        descripcion: draft.descripcion,
-        media_url: draft.media_uri,
-        tipo_media: draft.tipo_media,
-        latitud: draft.latitud,
-        longitud: draft.longitud,
-        metadatos_especie: { sync: 'draft' }
-      });
-
-      if (!error) {
-        await deleteDraft(draft.id);
-        
-        // Crear notificación de éxito
-        if (userId) {
-          await supabase.from('notificaciones').insert({
-            usuario_id: userId,
-            titulo: 'Sincronización Exitosa',
-            mensaje: `Tu registro de "${draft.nombre_tradicional}" se ha subido a la nube.`,
-            tipo: 'sincronizacion'
-          });
-        }
-      }
-    } catch (err) {
-      console.error('Error syncing draft:', err);
-    }
+  if (!userId) {
+    console.warn('syncDrafts: No hay sesión activa.');
+    return { identified: 0, uploaded: 0, failed: drafts.length };
   }
+
+  let identified = 0;
+  let uploaded = 0;
+  let failed = 0;
+
+  // Fase 1: Identificar con IA los que están pendientes
+  const pendingAi = drafts.filter(d => d.status === 'pending_ai');
+  for (const draft of pendingAi) {
+    onProgress?.(`Identificando "${draft.nombre_tradicional || 'captura'}"...`);
+    const ok = await identifyDraft(draft);
+    if (ok) identified++;
+    else failed++;
+    if (pendingAi.length > 1) await new Promise(r => setTimeout(r, AI_THROTTLE_MS));
+  }
+
+  // Fase 2: Subir los que están listos (re-leer para captar cambios de estado)
+  const freshDrafts = await getDrafts();
+  const pendingUpload = freshDrafts.filter(d => d.status === 'pending_upload');
+  for (const draft of pendingUpload) {
+    onProgress?.(`Subiendo "${draft.nombre_tradicional}"...`);
+    const ok = await uploadDraft(draft, userId);
+    if (ok) uploaded++;
+    else failed++;
+  }
+
+  return { identified, uploaded, failed };
 };

@@ -1,3 +1,19 @@
+/**
+ * create-record.tsx — Formulario de creación de registros de biodiversidad.
+ *
+ * Dos flujos de entrada:
+ * - **Desde scanner**: llega con datos pre-llenados (nombre, certeza IA, media)
+ * - **Manual**: el usuario selecciona imagen, la IA identifica, y completa el form
+ *
+ * Funcionalidades:
+ * - Identificación de especie con Gemini AI (selección de candidatos)
+ * - Búsqueda de especies en registros existentes (autocompletado)
+ * - Selección de ubicación via mapa modal con validación de geofence
+ * - Guardado como borrador local o publicación offline-first
+ *
+ * @module app/create-record
+ */
+
 import React, { useState } from 'react';
 import {
   StyleSheet, View, Text, ScrollView, TouchableOpacity,
@@ -16,7 +32,9 @@ import { saveDraft } from '../lib/drafts';
 import { identifySpecies } from '../lib/identifySpecies';
 import * as FileSystem from 'expo-file-system/legacy';
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
+
+/** Estructura de inserción para la tabla `registros` */
 type RegistroInsert = {
   usuario_id?:        string;
   nombre_tradicional: string;
@@ -41,7 +59,11 @@ export default function CreateRecordScreen() {
     nombreCientifico?:  string;
     iaCerteza?:         string;
     peligrosidad?:      string;
-    alimentacion?:      string;
+    endemismo?:         string;
+    descripcionBiologica?: string;
+    curiosidades?:      string;
+    mitos?:             string;
+    userNote?:          string;
   }>();
 
   // ─── Valores iniciales desde el escáner (si vienen) ──────────────────────
@@ -53,13 +75,14 @@ export default function CreateRecordScreen() {
   // ─── Estado del formulario ────────────────────────────────────────────────
   const [currentMediaUrl, setCurrentMediaUrl]   = useState(mediaUrl);
   const [currentTipoMedia, setCurrentTipoMedia] = useState(tipoMedia);
+  const [localMediaUri, setLocalMediaUri]       = useState<string | null>(mediaUrl || null);
   const [uploadingMedia, setUploadingMedia]     = useState(false);
 
   const [nombreTradicional, setNombreTradicional] = useState(params.nombreTradicional ?? '');
   const [nombreCientifico,  setNombreCientifico]  = useState(params.nombreCientifico  ?? '');
   const [peligrosidad,      setPeligrosidad]      = useState(params.peligrosidad      ?? '');
-  const [alimentacion,      setAlimentacion]      = useState(params.alimentacion      ?? '');
-  const [descripcion,       setDescripcion]       = useState('');
+  const [endemismo,         setEndemismo]         = useState(params.endemismo         ?? '');
+  const [descripcion,       setDescripcion]       = useState(params.userNote          ?? '');
 
   // Búsqueda de especie desde registros existentes
   const [speciesSearch,   setSpeciesSearch]   = useState('');
@@ -77,7 +100,9 @@ export default function CreateRecordScreen() {
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [iaCerteza, setIaCerteza] = useState(iaCertezaNum);
 
-  // ─── Buscar especies en registros anteriores ──────────────────────────────
+  // ── Búsqueda de especies en registros anteriores ───────────────────────────
+
+  /** Busca especies en la BD con debounce de 300ms */
   const handleSearchChange = (text: string) => {
     setSpeciesSearch(text);
     if (searchDebounce) clearTimeout(searchDebounce);
@@ -107,20 +132,22 @@ export default function CreateRecordScreen() {
     setSearchDebounce(t);
   };
 
+  /** Rellena el formulario con la especie seleccionada de la búsqueda */
   const selectSpeciesFromSearch = (sp: any) => {
     setNombreTradicional(sp.nombre_tradicional ?? '');
     setNombreCientifico(sp.nombre_cientifico   ?? '');
     setPeligrosidad(sp.peligrosidad            ?? '');
-    setAlimentacion(sp.alimentacion            ?? '');
+    setEndemismo(sp.alimentacion               ?? '');
     setShowSearch(false);
     setSpeciesSearch('');
     setSpeciesResults([]);
   };
 
   // ─── Cargar media adicional ───────────────────────────────────────────────
+  /** Abre el picker de imágenes y dispara análisis de IA automático */
   const handlePickMedia = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images', 'videos'],
+      mediaTypes: ['images'],
       allowsMultipleSelection: false,
       quality: 0.85,
     });
@@ -137,9 +164,16 @@ export default function CreateRecordScreen() {
     setTimeout(() => handleAnalyzeIA(asset.uri), 500);
   };
 
-  const [selectedFullInfo, setSelectedFullInfo] = useState<any>(null);
+  const [selectedFullInfo, setSelectedFullInfo] = useState<any>(
+    params.descripcionBiologica ? {
+      descripcion_biologica: params.descripcionBiologica,
+      curiosidades: params.curiosidades ? JSON.parse(params.curiosidades) : [],
+      mitos: params.mitos
+    } : null
+  );
 
   // ─── Analizar con IA ──────────────────────────────────────────────────────
+  /** Convierte imagen a base64 (web o native) y llama a Gemini */
   const handleAnalyzeIA = async (overrideUri?: string) => {
     const uriToAnalyze = overrideUri || localMediaUri;
     if (!uriToAnalyze) return;
@@ -180,11 +214,12 @@ export default function CreateRecordScreen() {
     }
   };
 
+  /** Aplica los datos del candidato seleccionado al formulario */
   const selectCandidate = (cand: any) => {
     setNombreTradicional(cand.nombreTradicional);
     setNombreCientifico(cand.nombreCientifico);
     setPeligrosidad(cand.peligrosidad);
-    setAlimentacion(cand.alimentacion);
+    setEndemismo(cand.endemismo);
     setIaCerteza(cand.iaCerteza);
     setSelectedFullInfo({
       descripcion_biologica: cand.descripcionBiologica,
@@ -195,9 +230,8 @@ export default function CreateRecordScreen() {
 
   const [aiCandidates, setAiCandidates] = useState<any[]>([]);
 
-  const [localMediaUri, setLocalMediaUri] = useState<string | null>(null);
-
   // ─── Abrir mapa y obtener GPS ─────────────────────────────────────────────
+  /** Solicita permisos GPS, obtiene coordenadas y abre el modal del mapa */
   const handleOpenMap = async () => {
     setLocLoading(true);
     try {
@@ -207,8 +241,8 @@ export default function CreateRecordScreen() {
         setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       }
     } catch {
-      // Si falla la geolocalización, centrar en la región Guayana
-      setCoords({ lat: 5.0, lng: -63.5 });
+      // Si falla la geolocalización, centrar en la región Guayana (un poco más al sur)
+      setCoords({ lat: 4.5, lng: -63.5 });
     } finally {
       setLocLoading(false);
       setMapModalVisible(true);
@@ -220,16 +254,19 @@ export default function CreateRecordScreen() {
     setMapModalVisible(false);
   };
 
+  /** Guarda como borrador local con status `pending_ai` */
   const handleSaveAsDraft = async () => {
     if (!nombreTradicional.trim()) return Alert.alert('Falta especie', 'Ingresá el nombre para el borrador.');
     if (!coords)                   return Alert.alert('Falta ubicación', 'Confirmá la ubicación en el mapa.');
     if (!currentMediaUrl)          return Alert.alert('Falta imagen',   'Adjuntá al menos una foto o video.');
 
-    const success = await saveDraft({
+    const draftId = await saveDraft({
+      status: 'pending_ai',
       nombre_tradicional: nombreTradicional.trim(),
       nombre_cientifico: nombreCientifico.trim(),
       peligrosidad: peligrosidad.trim(),
-      alimentacion: alimentacion.trim(),
+      alimentacion: '',
+      endemismo: endemismo.trim(),
       descripcion: descripcion.trim(),
       media_uri: currentMediaUrl,
       tipo_media: currentTipoMedia,
@@ -237,16 +274,17 @@ export default function CreateRecordScreen() {
       longitud: coords.lng,
     });
 
-    if (success) {
+    if (draftId) {
       Alert.alert(
         'Borrador Guardado 💾',
-        'El registro se guardó localmente. Se subirá automáticamente cuando recuperes la conexión.',
+        'El registro se guardó localmente. Se identificará y subirá automáticamente en segundo plano.',
         [{ text: 'Entendido', onPress: () => router.replace('/(tabs)') }]
       );
     }
   };
 
-  // ─── Publicar en Supabase ─────────────────────────────────────────────────
+  // ─── Publicar — Offline First ─────────────────────────────────────────────
+  /** Valida geofence, guarda como `pending_upload` para sync en background */
   const handlePublish = async () => {
     if (!nombreTradicional.trim()) return Alert.alert('Falta especie', 'Ingresá el nombre de la especie.');
     if (!coords)                   return Alert.alert('Falta ubicación', 'Confirmá la ubicación en el mapa.');
@@ -267,75 +305,35 @@ export default function CreateRecordScreen() {
 
     setPublishing(true);
     try {
-      // 0. Subir archivo a Supabase ahora (antes de insertar el registro)
-      let finalMediaUrl = currentMediaUrl;
-      if (localMediaUri) {
-        setUploadingMedia(true);
-        try {
-          finalMediaUrl = await uploadMediaToSupabase(localMediaUri, currentTipoMedia === 'video' ? 'video/mp4' : 'image/jpeg');
-        } catch (uploadErr: any) {
-          throw new Error(`Error al subir archivo: ${uploadErr.message}`);
-        } finally {
-          setUploadingMedia(false);
-        }
-      }
-
-      // 1. Obtener sesión — si no hay, iniciar sesión anónima
-      let { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        const { error: anonErr } = await supabase.auth.signInAnonymously();
-        if (anonErr) {
-          console.warn('Inicio de sesión anónimo falló o está deshabilitado:', anonErr.message);
-        } else {
-          session = (await supabase.auth.getSession()).data.session;
-        }
-      }
-
-      // 2. Construir el payload
-      const registro: RegistroInsert = {
-        usuario_id:         session?.user.id,
+      // Guardar localmente como pending_upload (la IA ya corrió en este flujo)
+      const draftId = await saveDraft({
+        status: 'pending_upload',
         nombre_tradicional: nombreTradicional.trim(),
-        nombre_cientifico:  nombreCientifico.trim(),
-        peligrosidad:       peligrosidad.trim(),
-        alimentacion:       alimentacion.trim(),
-        descripcion:        descripcion.trim(),
-        media_url:          finalMediaUrl,
-        tipo_media:         currentTipoMedia,
-        latitud:            coords.lat,
-        longitud:           coords.lng,
-        ia_certeza:         iaCertezaNum,
-        metadatos_especie:  { 
+        nombre_cientifico: nombreCientifico.trim(),
+        peligrosidad: peligrosidad.trim(),
+        alimentacion: '',
+        endemismo: endemismo.trim(),
+        descripcion: descripcion.trim(),
+        media_uri: currentMediaUrl,
+        tipo_media: currentTipoMedia,
+        latitud: coords.lat,
+        longitud: coords.lng,
+        ia_certeza: iaCerteza,
+        metadatos_especie: {
           origen: fromScanner ? 'scanner' : 'manual',
           ...(selectedFullInfo || {})
         },
-      };
+      });
 
-      // 3. Insertar en Supabase
-      const { error } = await supabase.from('registros').insert([registro]);
-      
-      if (error) {
-        // Si el error parece de red, sugerir guardarlo como borrador
-        if (error.message.includes('Network') || error.message.includes('fetch')) {
-          Alert.alert(
-            'Sin conexión',
-            'No pudimos conectar con el servidor. ¿Quieres guardar este registro como un borrador local?',
-            [
-              { text: 'Cancelar', style: 'cancel' },
-              { text: 'Guardar Borrador', onPress: handleSaveAsDraft }
-            ]
-          );
-          return;
-        }
-        throw new Error(error.message);
+      if (draftId) {
+        Alert.alert(
+          '¡Guardado! 📡',
+          `"${nombreTradicional}" se guardó localmente y se subirá en segundo plano cuando haya conexión.`,
+          [{ text: 'Entendido', onPress: () => router.replace('/(tabs)') }],
+        );
       }
-
-      Alert.alert(
-        '¡Registrado! 🎉',
-        `"${nombreTradicional}" fue guardado en la base de datos de la Guayana.`,
-        [{ text: 'Ver mapa', onPress: () => router.replace('/(tabs)') }],
-      );
     } catch (err: any) {
-      Alert.alert('Error al publicar', err?.message ?? 'Inténtalo de nuevo.');
+      Alert.alert('Error', err?.message ?? 'Inténtalo de nuevo.');
     } finally {
       setPublishing(false);
     }
@@ -498,11 +496,11 @@ export default function CreateRecordScreen() {
               />
             </View>
             <View style={styles.fieldHalf}>
-              <Text style={styles.fieldLabel}>Alimentación</Text>
+              <Text style={styles.fieldLabel}>Endemismo</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: '#f0f0f0' }]}
-                value={alimentacion}
-                onChangeText={setAlimentacion}
+                value={endemismo}
+                onChangeText={setEndemismo}
                 placeholder="---"
                 placeholderTextColor="#aaa"
                 editable={false}

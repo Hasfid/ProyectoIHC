@@ -1,5 +1,19 @@
+/**
+ * @module ProfileScreen
+ * Pantalla central de gestión del usuario.
+ * 
+ * Secciones:
+ * - Cabecera Dinámica: Foto, estadísticas (registros, seguidores, seguidos) y edición.
+ * - Mis Registros: Sistema Dual (Publicados en nube / Pendientes en local).
+ * - Comunidad: Historial de publicaciones del usuario.
+ * 
+ * Gestión Offline:
+ * - Los borradores pendientes se cargan desde AsyncStorage (`lib/drafts.ts`).
+ * - Sincronización automática vía `lib/useOfflineSync.ts`.
+ */
+
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Image,
@@ -13,19 +27,31 @@ import {
   Modal,
   TextInput,
   Alert,
-  FlatList,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadMediaToSupabase } from '../../lib/uploadMedia';
+import { getDrafts, deleteDraft, syncDrafts, DraftRecord } from '../../lib/drafts';
 
 const { width } = Dimensions.get('window');
 
 type Tab = 'records' | 'community';
+type RecordSubTab = 'published' | 'pending';
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<Tab>('records');
+  const [recordSubTab, setRecordSubTab] = useState<RecordSubTab>('published');
+  const [offlineDrafts, setOfflineDrafts] = useState<DraftRecord[]>([]);
+
+  // Si viene de Scanner con tab=pending, abrir esa sub-pestaña
+  useEffect(() => {
+    if (params.tab === 'pending') {
+      setActiveTab('records');
+      setRecordSubTab('pending');
+    }
+  }, [params.tab]);
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +67,7 @@ export default function ProfileScreen() {
   const [stats, setStats] = useState({ followers: 0, following: 0, records: 0 });
   const [userRecords, setUserRecords] = useState<any[]>([]);
   const [filter, setFilter] = useState<'Todos' | 'Animales' | 'Plantas'>('Todos');
+  const [searchQuery, setSearchQuery] = useState('');
   const [userPosts, setUserPosts] = useState<any[]>([]);
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   
@@ -120,9 +147,56 @@ export default function ProfileScreen() {
         fetchUserRecords(session.user.id);
         fetchUserPosts(session.user.id);
       }
+      // Cargar borradores offline (solo mobile)
+      loadOfflineDrafts();
     }, [session])
   );
 
+  /** Carga los borradores guardados localmente en AsyncStorage */
+  const loadOfflineDrafts = async () => {
+    const drafts = await getDrafts();
+    setOfflineDrafts(drafts);
+  };
+
+  const handleDeleteDraft = (draftId: string) => {
+    Alert.alert(
+      'Eliminar pendiente',
+      '¿Eliminar este registro pendiente? No se subirá a la nube.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteDraft(draftId);
+            await loadOfflineDrafts();
+          },
+        },
+      ]
+    );
+  };
+
+  const [retryingId, setRetryingId] = useState<string | null>(null);
+
+  /** Reintenta la sincronización manual de un borrador específico */
+  const handleRetryDraft = async (draftId: string) => {
+    setRetryingId(draftId);
+    try {
+      const result = await syncDrafts();
+      await loadOfflineDrafts();
+      if (result.uploaded > 0 || result.identified > 0) {
+        Alert.alert('📡 Sincronizado', `${result.uploaded} subido(s), ${result.identified} identificado(s).`);
+      } else if (result.failed > 0) {
+        Alert.alert('Sin conexión', 'No se pudo sincronizar. Verificá tu conexión a internet.');
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo reintentar la sincronización.');
+    } finally {
+      setRetryingId(null);
+    }
+  };
+
+  /** Inicializa la sesión y dispara la carga de perfil, stats y registros */
   const fetchSessionAndProfile = async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
@@ -158,6 +232,7 @@ export default function ProfileScreen() {
     }
   };
 
+  /** Obtiene contadores de seguidores, seguidos y registros desde Supabase */
   const fetchStats = async (userId: string) => {
     // Contar seguidores
     const { count: followersCount } = await supabase
@@ -223,6 +298,11 @@ export default function ProfileScreen() {
   };
 
   const filteredRecords = userRecords.filter(item => {
+    const matchesSearch = (item.nombre_tradicional || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (item.nombre_cientifico || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    
     if (filter === 'Todos') return true;
     const isAnim = isAnimal(item);
     if (filter === 'Animales') return isAnim;
@@ -370,6 +450,7 @@ export default function ProfileScreen() {
     }
   };
 
+  /** Sube nueva foto (si aplica) y actualiza metadatos en la tabla `perfiles` */
   const saveProfile = async () => {
     if (!editUsername) {
       setUsernameError('El nombre de usuario no puede estar vacío');
@@ -474,7 +555,7 @@ export default function ProfileScreen() {
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>{stats.records}</Text>
-              <Text style={styles.statLabel}>Mi Expedición</Text>
+              <Text style={styles.statLabel}>Registros</Text>
             </View>
             <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'followers' } })}>
               <Text style={styles.statNumber}>{stats.followers}</Text>
@@ -517,39 +598,155 @@ export default function ProfileScreen() {
         </View>
 
         {activeTab === 'records' && (
-          <View style={styles.filterRow}>
-            {['Todos', 'Animales', 'Plantas'].map((f: any) => (
-              <TouchableOpacity 
-                key={f} 
-                onPress={() => setFilter(f)}
-                style={[styles.filterChip, filter === f && styles.filterChipActive]}
+          <>
+            {/* Título + Sub-pestañas */}
+            <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+              <Text style={styles.sectionTitle}>Mis Registros</Text>
+            </View>
+            <View style={styles.subTabRow}>
+              <TouchableOpacity
+                style={[styles.subTab, recordSubTab === 'published' && styles.subTabActive]}
+                onPress={() => setRecordSubTab('published')}
               >
-                <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
+                <Ionicons name="cloud-done-outline" size={16} color={recordSubTab === 'published' ? '#004d40' : '#888'} />
+                <Text style={[styles.subTabText, recordSubTab === 'published' && styles.subTabTextActive]}>
+                  Publicados ({stats.records})
+                </Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
+              <TouchableOpacity
+                style={[styles.subTab, recordSubTab === 'pending' && styles.subTabActive]}
+                onPress={() => { setRecordSubTab('pending'); loadOfflineDrafts(); }}
+              >
+                <Ionicons name="time-outline" size={16} color={recordSubTab === 'pending' ? '#e65100' : '#888'} />
+                <Text style={[styles.subTabText, recordSubTab === 'pending' && styles.subTabTextActivePending]}>
+                  Pendientes ({offlineDrafts.length})
+                </Text>
+              </TouchableOpacity>
+            </View>
 
-        {activeTab === 'records' && (
-          filteredRecords.length === 0 ? (
-            <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 40 }]}>
-              <Ionicons name="leaf-outline" size={48} color="#ccc" />
-              <Text style={{ color: '#999', marginTop: 8 }}>Sin registros en esta categoría</Text>
-            </View>
-          ) : (
-            <View style={styles.gridContainer}>
-              {filteredRecords.map((record) => (
-                <TouchableOpacity
-                  key={record.id}
-                  style={styles.gridItem}
-                  onPress={() => setSelectedRecord(record)}
-                  activeOpacity={0.8}
-                >
-                  <Image source={{ uri: record.media_url }} style={styles.gridImage} />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )
+            {/* ── Sub-tab: Publicados ── */}
+            {recordSubTab === 'published' && (
+              <>
+                <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+                  <View style={styles.searchBar}>
+                    <Ionicons name="search" size={20} color="#999" />
+                    <TextInput
+                      style={styles.searchInput}
+                      placeholder="Buscar en mis registros..."
+                      placeholderTextColor="#999"
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                    />
+                    {searchQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setSearchQuery('')}>
+                        <Ionicons name="close-circle" size={20} color="#999" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.filterRow}>
+                  {['Todos', 'Animales', 'Plantas'].map((f: any) => (
+                    <TouchableOpacity 
+                      key={f} 
+                      onPress={() => setFilter(f)}
+                      style={[styles.filterChip, filter === f && styles.filterChipActive]}
+                    >
+                      <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {filteredRecords.length === 0 ? (
+                  <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 40 }]}>
+                    <Ionicons name="leaf-outline" size={48} color="#ccc" />
+                    <Text style={{ color: '#999', marginTop: 8 }}>Sin registros en esta categoría</Text>
+                  </View>
+                ) : (
+                  <View style={styles.gridContainer}>
+                    {filteredRecords.map((record) => (
+                      <TouchableOpacity
+                        key={record.id}
+                        style={styles.gridItem}
+                        onPress={() => setSelectedRecord(record)}
+                        activeOpacity={0.8}
+                      >
+                        <Image source={{ uri: record.media_url }} style={styles.gridImage} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ── Sub-tab: Pendientes (offline drafts) ── */}
+            {recordSubTab === 'pending' && (
+              <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+                <Text style={styles.sectionTitle}>Registros Pendientes</Text>
+                <Text style={{ color: '#888', fontSize: 13, marginBottom: 16 }}>
+                  Se subirán automáticamente cuando haya conexión a internet.
+                </Text>
+
+                {offlineDrafts.length === 0 ? (
+                  <View style={{ alignItems: 'center', padding: 40 }}>
+                    <Ionicons name="checkmark-circle-outline" size={48} color="#ccc" />
+                    <Text style={{ color: '#999', marginTop: 8 }}>No hay registros pendientes</Text>
+                  </View>
+                ) : (
+                  offlineDrafts.map((draft) => (
+                    <View key={draft.id} style={styles.draftCard}>
+                      <Image source={{ uri: draft.media_uri }} style={styles.draftImage} />
+                      <View style={styles.draftInfo}>
+                        <Text style={styles.draftName} numberOfLines={1}>
+                          {draft.nombre_tradicional}
+                        </Text>
+                        <View style={[
+                          styles.draftStatusBadge,
+                          draft.status === 'pending_ai' ? styles.draftStatusAI : styles.draftStatusUpload
+                        ]}>
+                          <Ionicons
+                            name={draft.status === 'pending_ai' ? 'sparkles-outline' : 'cloud-upload-outline'}
+                            size={12}
+                            color={draft.status === 'pending_ai' ? '#e65100' : '#1565c0'}
+                          />
+                          <Text style={[
+                            styles.draftStatusText,
+                            { color: draft.status === 'pending_ai' ? '#e65100' : '#1565c0' }
+                          ]}>
+                            {draft.status === 'pending_ai' ? 'Esperando IA' : 'Esperando subida'}
+                          </Text>
+                        </View>
+                        {draft.last_error && (
+                          <Text style={styles.draftError} numberOfLines={1}>⚠ {draft.last_error}</Text>
+                        )}
+                        <Text style={styles.draftDate}>
+                          {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                      </View>
+                      <View style={styles.draftActions}>
+                        <TouchableOpacity
+                          style={styles.draftRetryBtn}
+                          onPress={() => handleRetryDraft(draft.id)}
+                          disabled={retryingId === draft.id}
+                        >
+                          {retryingId === draft.id
+                            ? <ActivityIndicator size={16} color="#2e7d32" />
+                            : <Ionicons name="refresh-outline" size={20} color="#2e7d32" />
+                          }
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.draftDeleteBtn}
+                          onPress={() => handleDeleteDraft(draft.id)}
+                        >
+                          <Ionicons name="trash-outline" size={20} color="#d32f2f" />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))
+                )}
+              </View>
+            )}
+          </>
         )}
 
         {activeTab === 'community' && (
@@ -766,6 +963,17 @@ const styles = StyleSheet.create({
   editButton: { flex: 1, backgroundColor: '#f2f2f2', paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   editButtonText: { fontSize: 14, fontWeight: '600', color: '#111' },
   tabsContainer: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#eaeaea' },
+  sectionTitle: {
+    fontSize: 18, fontWeight: 'bold', color: '#111', marginBottom: 12,
+  },
+  searchBar: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5',
+    paddingHorizontal: 12, borderRadius: 12, height: 42, gap: 8,
+    marginBottom: 4,
+  },
+  searchInput: {
+    flex: 1, fontSize: 14, color: '#111',
+  },
   tab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'transparent' },
   activeTab: { borderBottomColor: '#111' },
   gridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
@@ -996,4 +1204,62 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: '#e0f2f1', borderColor: '#004d40' },
   filterText: { fontSize: 12, color: '#666', fontWeight: '600' },
   filterTextActive: { color: '#004d40' },
+
+  // Sub-tabs (Publicados / Pendientes)
+  subTabRow: {
+    flexDirection: 'row', marginHorizontal: 20, marginTop: 12, gap: 8,
+  },
+  subTab: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 10, borderRadius: 12, backgroundColor: '#f5f5f5',
+    borderWidth: 1, borderColor: '#eee',
+  },
+  subTabActive: { backgroundColor: '#e0f2f1', borderColor: '#004d40' },
+  subTabText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  subTabTextActive: { color: '#004d40' },
+  subTabTextActivePending: { color: '#e65100' },
+
+  // Draft cards (pendientes offline)
+  draftCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    borderRadius: 14, padding: 12, marginBottom: 10,
+    borderWidth: 1, borderColor: '#eee',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+  },
+  draftImage: {
+    width: 56, height: 56, borderRadius: 10, backgroundColor: '#f0f0f0',
+  },
+  draftInfo: {
+    flex: 1, marginLeft: 12, gap: 3,
+  },
+  draftName: {
+    fontSize: 15, fontWeight: '600', color: '#111',
+  },
+  draftStatusBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8,
+  },
+  draftStatusAI: { backgroundColor: '#fff3e0' },
+  draftStatusUpload: { backgroundColor: '#e3f2fd' },
+  draftStatusText: {
+    fontSize: 11, fontWeight: '600',
+  },
+  draftError: {
+    fontSize: 11, color: '#d32f2f',
+  },
+  draftDate: {
+    fontSize: 11, color: '#999',
+  },
+  draftDeleteBtn: {
+    padding: 8,
+  },
+  draftActions: {
+    alignItems: 'center', gap: 4, marginLeft: 4,
+  },
+  draftRetryBtn: {
+    padding: 8,
+  },
 });
+

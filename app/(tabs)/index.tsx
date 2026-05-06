@@ -1,3 +1,9 @@
+/**
+ * @module DiscoverScreen
+ * Pantalla principal de "Descubrir".
+ * Muestra el mapa interactivo de avistamientos y un acceso rápido al chat.
+ */
+
 import React from 'react';
 import { StyleSheet, View, TouchableOpacity, Dimensions } from 'react-native';
 import { BlurView } from 'expo-blur';

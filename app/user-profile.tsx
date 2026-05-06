@@ -1,3 +1,12 @@
+/**
+ * user-profile.tsx — Perfil público de otro usuario.
+ *
+ * Muestra foto, bio, stats (registros, seguidores, seguidos),
+ * botón de follow/unfollow y acceso a mensajería directa.
+ *
+ * @module app/user-profile
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -30,6 +39,7 @@ export default function UserProfileScreen() {
     if (userId) loadProfile();
   }, [userId]);
 
+  /** Carga perfil, stats y estado de follow */
   const loadProfile = async () => {
     setLoading(true);
     try {
@@ -70,6 +80,7 @@ export default function UserProfileScreen() {
     }
   };
 
+  /** Alterna follow/unfollow con actualización optimista del contador */
   const toggleFollow = async () => {
     if (!currentUserId || !userId || togglingFollow) return;
 
@@ -91,6 +102,7 @@ export default function UserProfileScreen() {
     }
   };
 
+  /** Navega al hub social del usuario con la tab indicada */
   const navigateToFollowers = (type: 'followers' | 'following') => {
     router.push({ pathname: '/social', params: { userId: userId!, tab: type } });
   };

@@ -1,3 +1,12 @@
+/**
+ * login.tsx — Pantalla de inicio de sesión.
+ *
+ * Validaciones client-side: formato de email, longitud mínima de contraseña.
+ * Autenticación via Supabase Auth con mensajes de error en español.
+ *
+ * @module app/login
+ */
+
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
@@ -11,8 +20,8 @@ export default function LoginScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  /** Valida campos y autentica con Supabase Auth */
   const handleLogin = async () => {
-    // Validaciones
     if (!email || !password) {
       Alert.alert('Error', 'Por favor llena todos los campos.');
       return;

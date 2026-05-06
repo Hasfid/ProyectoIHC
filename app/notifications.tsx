@@ -1,3 +1,12 @@
+/**
+ * notifications.tsx — Pantalla de notificaciones del usuario.
+ *
+ * Muestra notificaciones de seguimiento, sincronización offline,
+ * competencias y sistema. Soporta pull-to-refresh y marca como leído.
+ *
+ * @module app/notifications
+ */
+
 import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
@@ -12,6 +21,7 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 
+/** Estructura de una notificación del sistema */
 type Notificacion = {
   id: string;
   titulo: string;
@@ -31,6 +41,7 @@ export default function NotificationsScreen() {
     fetchNotifications();
   }, []);
 
+  /** Carga todas las notificaciones del usuario autenticado */
   const fetchNotifications = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -55,6 +66,7 @@ export default function NotificationsScreen() {
     }
   };
 
+  /** Marca una notificación como leída (actualización optimista en UI) */
   const markAsRead = async (id: string) => {
     try {
       await supabase
@@ -75,6 +87,7 @@ export default function NotificationsScreen() {
     fetchNotifications();
   };
 
+  /** Retorna el nombre del ícono Ionicons según el tipo de notificación */
   const getIcon = (tipo: string) => {
     switch (tipo) {
       case 'seguidor': return 'people';
@@ -84,6 +97,7 @@ export default function NotificationsScreen() {
     }
   };
 
+  /** Retorna el color del ícono según el tipo de notificación */
   const getIconColor = (tipo: string) => {
     switch (tipo) {
       case 'seguidor': return '#2196F3';
@@ -115,7 +129,12 @@ export default function NotificationsScreen() {
       <Stack.Screen 
         options={{ 
           headerTitle: 'Notificaciones',
-          headerBackTitle: 'Atrás'
+          headerLeft: () => (
+            <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
+              <Ionicons name="chevron-back" size={28} color="#004d40" />
+            </TouchableOpacity>
+          ),
+          headerShadowVisible: false,
         }} 
       />
 
