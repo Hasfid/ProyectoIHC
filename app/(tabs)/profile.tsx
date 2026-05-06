@@ -75,7 +75,16 @@ export default function ProfileScreen() {
       .eq('id', userId)
       .single();
       
-    if (data && !error) {
+    if (error) {
+      // Si el perfil no existe (ej: usuario anónimo), crear uno por defecto en memoria
+      setProfile({
+        id: userId,
+        username: session?.user?.user_metadata?.username || 'Usuario Anónimo',
+        nombre: session?.user?.user_metadata?.nombre || 'Usuario Anónimo',
+        descripcion: 'Explorador de Guayana',
+        foto_perfil: null
+      });
+    } else {
       setProfile(data);
     }
   };
@@ -159,13 +168,13 @@ export default function ProfileScreen() {
 
       const { error } = await supabase
         .from('perfiles')
-        .update({
+        .upsert({
+          id: session?.user.id,
           username: editUsername.toLowerCase().trim(),
           nombre: editUsername, 
           descripcion: editDescription,
           foto_perfil: finalPhotoUrl
-        })
-        .eq('id', session?.user.id);
+        });
 
       if (error) throw error;
 

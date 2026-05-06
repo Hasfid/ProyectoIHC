@@ -11,24 +11,23 @@ export default function RootLayout() {
   useEffect(() => {
     // Escuchar el estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      const inAuthGroup = segments[0] === '(tabs)';
+      if (!segments.length) return; // Esperar a que el router esté montado
       const isNavigatingToAuth = segments[0] === 'login' || segments[0] === 'register';
 
-      if (!session && inAuthGroup) {
-        // No hay sesión y trata de entrar a la app -> Login
+      if (!session && !isNavigatingToAuth) {
         router.replace('/login');
       } else if (session && isNavigatingToAuth) {
-        // Hay sesión y trata de entrar al login -> App
         router.replace('/(tabs)');
       }
     });
 
     // Verificación inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
-      const inAuthGroup = segments[0] === '(tabs)';
-      if (!session && inAuthGroup) {
+      const isNavigatingToAuth = segments[0] === 'login' || segments[0] === 'register';
+      
+      if (!session && !isNavigatingToAuth && segments.length > 0) {
         router.replace('/login');
-      } else if (session && !inAuthGroup) {
+      } else if (session && isNavigatingToAuth) {
         router.replace('/(tabs)');
       }
       setIsReady(true);
@@ -50,6 +49,8 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
+      <Stack.Screen name="create-record" options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen name="notifications" options={{ presentation: 'modal', headerShown: false }} />
     </Stack>
   );
 }
