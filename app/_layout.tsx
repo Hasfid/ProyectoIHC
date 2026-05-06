@@ -24,7 +24,6 @@ export default function RootLayout() {
     // Verificación inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isNavigatingToAuth = segments[0] === 'login' || segments[0] === 'register';
-      
       if (!session && !isNavigatingToAuth && segments.length > 0) {
         router.replace('/login');
       } else if (session && isNavigatingToAuth) {
@@ -51,6 +50,8 @@ export default function RootLayout() {
       <Stack.Screen name="register" />
       <Stack.Screen name="create-record" options={{ presentation: 'modal', headerShown: false }} />
       <Stack.Screen name="notifications" options={{ presentation: 'modal', headerShown: false }} />
+      <Stack.Screen name="social" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="user-profile" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }

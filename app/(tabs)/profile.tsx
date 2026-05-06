@@ -229,14 +229,14 @@ export default function ProfileScreen() {
               <Text style={styles.statNumber}>{stats.records}</Text>
               <Text style={styles.statLabel}>Registros</Text>
             </View>
-            <View style={styles.statItem}>
+            <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'followers' } })}>
               <Text style={styles.statNumber}>{stats.followers}</Text>
               <Text style={styles.statLabel}>Seguidores</Text>
-            </View>
-            <View style={styles.statItem}>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'following' } })}>
               <Text style={styles.statNumber}>{stats.following}</Text>
               <Text style={styles.statLabel}>Seguidos</Text>
-            </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -248,6 +248,9 @@ export default function ProfileScreen() {
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
             <Text style={styles.editButtonText}>Editar perfil</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editButton} onPress={() => router.push({ pathname: '/social', params: { tab: 'discover' } })}>
+            <Text style={styles.editButtonText}>Descubrir personas</Text>
           </TouchableOpacity>
         </View>
 
