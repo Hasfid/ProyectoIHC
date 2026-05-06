@@ -25,10 +25,11 @@ export default function RootLayout() {
 
     // Verificación inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
+      const isNavigatingToAuth = segments[0] === 'login' || segments[0] === 'register';
       const inAuthGroup = segments[0] === '(tabs)';
-      if (!session && inAuthGroup) {
+      if (!session && !isNavigatingToAuth) {
         router.replace('/login');
-      } else if (session && !inAuthGroup) {
+      } else if (session && isNavigatingToAuth) {
         router.replace('/(tabs)');
       }
       setIsReady(true);
@@ -50,6 +51,8 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" />
       <Stack.Screen name="register" />
+      <Stack.Screen name="social" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="user-profile" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );
 }
