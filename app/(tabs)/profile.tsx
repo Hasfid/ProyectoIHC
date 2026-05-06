@@ -992,7 +992,7 @@ const styles = StyleSheet.create({
 
   // Filters
   filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 12, marginTop: 10 },
-  filterChip: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f5', borderWeight: 1, borderColor: '#eee', borderWidth: 1 },
+  filterChip: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 20, backgroundColor: '#f5f5f5', borderColor: '#eee', borderWidth: 1 },
   filterChipActive: { backgroundColor: '#e0f2f1', borderColor: '#004d40' },
   filterText: { fontSize: 12, color: '#666', fontWeight: '600' },
   filterTextActive: { color: '#004d40' },
