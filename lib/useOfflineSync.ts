@@ -14,9 +14,9 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { Platform, Alert, AppState } from 'react-native';
+import { Platform, Alert, AppState, DeviceEventEmitter } from 'react-native';
 import * as Network from 'expo-network';
-import { syncDrafts, getDraftCount } from './drafts';
+import { syncDrafts, getDraftCount, DRAFTS_UPDATED_EVENT } from './drafts';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -62,16 +62,7 @@ export function useOfflineSync(): void {
       isSyncing.current = true;
       try {
         const result = await syncDrafts();
-        const totalDone = result.identified + result.uploaded;
-
-        if (totalDone > 0) {
-          const parts: string[] = [];
-          if (result.uploaded > 0) parts.push(`${result.uploaded} registro(s) subido(s)`);
-          if (result.identified > 0) parts.push(`${result.identified} identificado(s) por IA`);
-          if (result.failed > 0) parts.push(`${result.failed} pendiente(s)`);
-
-          Alert.alert('📡 Sincronización en segundo plano', parts.join('\n'), [{ text: 'OK' }]);
-        }
+        // Sincronización silenciosa en segundo plano
       } catch (err) {
         console.error('Error en sincronización automática:', err);
       } finally {
@@ -90,9 +81,15 @@ export function useOfflineSync(): void {
       if (nextState === 'active') attemptSync();
     });
 
+    // Reintentar cuando se agrega/modifica un borrador
+    const draftSubscription = DeviceEventEmitter.addListener(DRAFTS_UPDATED_EVENT, () => {
+      attemptSync();
+    });
+
     return () => {
       clearInterval(interval);
       subscription.remove();
+      draftSubscription.remove();
     };
   }, []);
 }

@@ -23,6 +23,9 @@ import { Platform, DeviceEventEmitter } from 'react-native';
 /** Evento emitido cuando cambia la lista de borradores (creación, borrado, sync) */
 export const DRAFTS_UPDATED_EVENT = 'ecos_drafts_updated';
 
+/** Evento emitido cuando se crea una notificación (registro subido, etc.) */
+export const NOTIFICATION_UPDATED_EVENT = 'ecos_notification_updated';
+
 // ── Constantes ───────────────────────────────────────────────────────────────
 
 /** Clave de AsyncStorage donde se guardan los borradores */
@@ -34,7 +37,7 @@ const AI_THROTTLE_MS = 2000;
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 /** Estados posibles de un borrador en el pipeline offline */
-export type DraftStatus = 'pending_ai' | 'pending_upload' | 'failed';
+export type DraftStatus = 'pending_ai' | 'pending_selection' | 'pending_upload' | 'failed' | 'rejected';
 
 /** Estructura completa de un borrador persistido localmente */
 export type DraftRecord = {
@@ -115,7 +118,7 @@ export const deleteDraft = async (id: string): Promise<void> => {
 };
 
 /** Actualiza campos parciales de un borrador existente. */
-const updateDraft = async (id: string, updates: Partial<DraftRecord>): Promise<void> => {
+export const updateDraft = async (id: string, updates: Partial<DraftRecord>): Promise<void> => {
   try {
     const drafts = await getDrafts();
     const updated = drafts.map(d => (d.id === id ? { ...d, ...updates } : d));
@@ -158,7 +161,7 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
 
     if (best) {
       await updateDraft(draft.id, {
-        status: 'pending_upload',
+        status: 'pending_selection',
         nombre_tradicional: best.nombreTradicional || draft.nombre_tradicional,
         nombre_cientifico: best.nombreCientifico || '',
         peligrosidad: best.peligrosidad || '',
@@ -176,23 +179,37 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
       return true;
     }
 
-    // IA no devolvió candidatos — subir igual sin identificación
+    // IA no devolvió candidatos (solo humanos o nada) — rechazar registro
     await updateDraft(draft.id, {
-      status: 'pending_upload',
-      nombre_tradicional: draft.nombre_tradicional || 'Especie no identificada',
-      last_error: undefined,
+      status: 'rejected',
+      nombre_tradicional: 'Sin especie detectada',
+      last_error: 'Parece que no hay animales ni plantas aquí.',
     });
+    
     return true;
   } catch (err: any) {
     console.error(`AI identification failed for "${draft.id}":`, err);
 
+    const errorMsg = err?.message || '';
+
+    if (errorMsg.includes('nativa, endémica o invasora')) {
+      // Failed geographical filter — keep as pending so user sees it
+      await updateDraft(draft.id, {
+        status: 'pending_selection',
+        nombre_tradicional: 'Especie no válida',
+        last_error: 'La especie detectada no habita en Venezuela. Eliminá este borrador o intentá con otra foto.',
+        metadatos_especie: { rejected_reason: 'geo_filter', all_candidates: [] },
+      });
+      return true;
+    }
+
     // Rate limit → no marcar como failed, reintentar después
-    if (err?.message?.includes('tráfico')) {
+    if (errorMsg.includes('tráfico')) {
       await updateDraft(draft.id, { last_error: 'Rate limit — reintentando' });
       return false;
     }
 
-    await updateDraft(draft.id, { last_error: err?.message });
+    await updateDraft(draft.id, { last_error: errorMsg });
     return false;
   }
 };
@@ -237,12 +254,20 @@ const uploadDraft = async (draft: DraftRecord, userId: string): Promise<boolean>
 
     await deleteDraft(draft.id);
 
-    await supabase.from('notificaciones').insert({
+    const { error: notifError } = await supabase.from('notificaciones').insert({
       usuario_id: userId,
       titulo: '📡 Registro sincronizado',
-      mensaje: `"${draft.nombre_tradicional}" se subió desde modo offline.`,
+      mensaje: `"${draft.nombre_tradicional}" se acaba de subir.`,
       tipo: 'sincronizacion',
+      leido: false,
     });
+
+    if (notifError) {
+      console.error('Error creando notificación:', notifError.message);
+    }
+
+    // Notificar a los badges para que se actualicen inmediatamente
+    DeviceEventEmitter.emit(NOTIFICATION_UPDATED_EVENT);
 
     return true;
   } catch (err: any) {

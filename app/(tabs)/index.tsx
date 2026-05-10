@@ -10,6 +10,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs, useRouter } from 'expo-router';
 import Map from '../../components/Map';
+import WeatherWidget from '../../components/WeatherWidget';
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -17,8 +18,9 @@ export default function DiscoverScreen() {
   return (
     <View style={styles.container}>
 
-      
       <Map />
+
+      <WeatherWidget />
 
       <View style={styles.floatingButtonContainer}>
         <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>

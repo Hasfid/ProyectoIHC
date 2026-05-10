@@ -1,48 +1,14 @@
 /**
- * identifySpecies.ts — Identificación de especies con Gemini AI.
+ * identifySpecies.ts — Identificación de especies vía Supabase Edge Functions.
  *
- * Envía una imagen en base64 a la API de Gemini 2.0 Flash y recibe
- * hasta 3 candidatos de especies con nombre, peligrosidad, endemismo
- * y datos culturales de la Guayana venezolana.
+ * Envía una imagen en base64 a la Edge Function segura, la cual se comunica
+ * con Gemini para devolver los candidatos identificados. Las API Keys
+ * están protegidas en el backend.
  *
  * @module lib/identifySpecies
  */
 
-// ── Configuración ────────────────────────────────────────────────────────────
-
-const GEMINI_API_KEYS = [
-  'AIzaSyAgzAUMIQ7gqykNANwDS5gW9Kj3oEMZZsk',
-  'AIzaSyCHhNY4HbQtjY54jllPnUKf5gNv2XXVTk8'
-];
-
-/**
- * Prompt de sistema para Gemini. Instruye al modelo a actuar como
- * biólogo del Escudo Guayanés y devolver JSON estructurado.
- */
-const SYSTEM_PROMPT = `Eres un experto biólogo especializado en el Escudo Guayanés (Bolívar, Amazonas y Esequibo). Tu prioridad absoluta es identificar especies autóctonas de esta región.
-
-Analiza la imagen y provee hasta 3 candidatos posibles, priorizando siempre la fauna y flora de la Guayana venezolana.
-Responde ÚNICAMENTE con un JSON válido, sin markdown ni etiquetas.
-
-Estructura del JSON:
-{
-  "candidates": [
-    {
-      "nombreTradicional": "Nombre regional",
-      "nombreCientifico": "Género y especie",
-      "peligrosidad": "Baja/Media/Alta",
-      "endemismo": "Sí (Guayana) / Sí (Venezuela) / No",
-      "iaCerteza": 0.9,
-      "descripcionBiologica": "Adaptaciones al entorno guayanés.",
-      "curiosidades": ["Dato local 1", "Dato local 2"],
-      "mitos": "Leyenda indígena local (Pemón, etc.)"
-    }
-  ]
-}
-
-iaCerteza debe ser un número decimal entre 0 y 1.`;
-
-// ── Tipos ────────────────────────────────────────────────────────────────────
+import { supabase } from './supabase';
 
 /** Candidato de especie retornado por la IA */
 export interface SpeciesCandidate {
@@ -61,80 +27,37 @@ export interface IdentificationResult {
   candidates: SpeciesCandidate[];
 }
 
-// ── Función principal ────────────────────────────────────────────────────────
-
 /**
- * Identifica especies a partir de una imagen codificada en base64.
- *
- * Envía la imagen a Gemini y parsea la respuesta JSON. Maneja
- * rate limiting (429) con un mensaje amigable para el usuario.
+ * Identifica especies a partir de una imagen codificada en base64
+ * delegando la carga y la seguridad a la Edge Function de Supabase.
  *
  * @param base64Image - Imagen en formato base64 (sin prefijo data:)
  * @returns Objeto con array de candidatos identificados
- * @throws Error con mensaje en español legible si falla la API o el parseo
- *
- * @example
- * ```ts
- * const result = await identifySpecies(base64String);
- * const best = result.candidates[0];
- * console.log(best.nombreTradicional, best.iaCerteza);
- * ```
+ * @throws Error con mensaje en español legible si falla la red o el backend
  */
 export async function identifySpecies(
   base64Image: string,
 ): Promise<IdentificationResult> {
-  const payload = {
-    contents: [
-      {
-        parts: [
-          { text: SYSTEM_PROMPT },
-          { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
-        ],
-      },
-    ],
-  };
-
-  const randomKey = GEMINI_API_KEYS[Math.floor(Math.random() * GEMINI_API_KEYS.length)];
-  const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${randomKey}`;
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+  const { data, error } = await supabase.functions.invoke('identify-species', {
+    body: { base64Image },
   });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    console.error('API Error Status:', response.status);
-    console.error('API Error Body:', errorBody);
-    
-    if (response.status === 429) {
-      throw new Error(
-        'Hay mucho tráfico en este momento. Esperá unos segundos e intentá de nuevo.',
-      );
+  if (error) {
+    console.error('Error invocando Edge Function:', error.message);
+    throw new Error('El servicio de identificación no está disponible en este momento.');
+  }
+
+  if (data?.error) {
+    console.error('Error reportado por la Edge Function:', data.error, data.details);
+    if (data.details?.includes('429')) {
+      throw new Error('Hay mucho tráfico en este momento. Esperá unos segundos e intentá de nuevo.');
     }
-    throw new Error(
-      `El servicio de identificación no está disponible (Error ${response.status}).`,
-    );
+    throw new Error('Ocurrió un error al procesar la imagen con la Inteligencia Artificial.');
   }
 
-  const data = await response.json();
-  const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text;
-
-  if (!textResponse) {
-    throw new Error('No se obtuvo respuesta de la IA.');
+  if (!data || !data.candidates || data.candidates.length === 0) {
+    throw new Error('La IA no detectó una especie válida. Asegúrate de que la imagen contenga fauna o flora que habite en Venezuela (nativa, endémica o invasora).');
   }
 
-  // Limpiar en caso de que Gemini añada ```json ... ```
-  const cleanText = textResponse
-    .replace(/```json/g, '')
-    .replace(/```/g, '')
-    .trim();
-
-  try {
-    return JSON.parse(cleanText) as IdentificationResult;
-  } catch {
-    console.error('Error parseando respuesta de Gemini:', textResponse);
-    throw new Error('Error procesando respuesta de la IA.');
-  }
+  return data as IdentificationResult;
 }

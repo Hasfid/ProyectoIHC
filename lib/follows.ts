@@ -47,7 +47,8 @@ export const followUser = async (followerId: string, followedId: string): Promis
       usuario_id: followedId,
       titulo: 'Nuevo seguidor',
       mensaje: `${followerId}||${displayName} ha empezado a seguirte.`,
-      tipo: 'seguidor'
+      tipo: 'seguidor',
+      leido: false,
     });
   }
 };

@@ -1,41 +1,28 @@
 /**
  * Map.tsx — Mapa nativo de biodiversidad para mobile (iOS/Android).
  *
- * Renderiza un MapView de react-native-maps con:
- * - Polígono de la Guayana venezolana con oscurecimiento exterior
- * - Marcadores personalizados con foto circular y badge de categoría
- * - Callouts con preview y botón "Ver detalles"
- * - Modal glassmorphism con datos enriquecidos (biología, curiosidades,
- *   mitos y leyendas guayanesas)
- *
- * Los datos enriquecidos se cargan desde un catálogo local simulado.
- * En producción se reemplazarían por una llamada a la API de IA.
+ * En Android (Expo Go), el Callout nativo renderiza como bitmap estático,
+ * por lo que usamos una tarjeta flotante posicionada sobre el mapa.
+ * Los marcadores usan íconos de categoría en vez de fotos remotas
+ * para evitar problemas de renderizado en Expo Go.
  *
  * @module components/Map
  */
 
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, Text, Image, Dimensions, Modal, TouchableOpacity, ScrollView, Platform } from 'react-native';
-import MapView, { Marker, Polygon, Callout } from 'react-native-maps';
-import { BlurView } from 'expo-blur';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { StyleSheet, View, Text, Image, Dimensions, TouchableOpacity, ScrollView, Platform } from 'react-native';
+import MapView, { Marker, Polygon } from 'react-native-maps';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 // ── Geometría ────────────────────────────────────────────────────────────────
 
-/** Polígono aproximado de la Guayana venezolana */
-const GUAYANA_REGION = [
-  { latitude: 8.5, longitude: -60.0 },
-  { latitude: 8.0, longitude: -63.0 },
-  { latitude: 7.5, longitude: -65.0 },
-  { latitude: 6.0, longitude: -68.0 },
-  { latitude: 1.0, longitude: -67.0 },
-  { latitude: 1.0, longitude: -64.0 },
-  { latitude: 4.0, longitude: -61.0 },
-  { latitude: 7.0, longitude: -60.0 },
-];
+import { GUAYANA_POLYGON } from '../lib/geofence';
 
-/** Polígono mundial para crear el efecto de máscara/oscurecimiento */
+const GUAYANA_REGION = GUAYANA_POLYGON;
+
 const WORLD_REGION = [
   { latitude: 90, longitude: -180 },
   { latitude: -90, longitude: -180 },
@@ -43,203 +30,92 @@ const WORLD_REGION = [
   { latitude: 90, longitude: 180 },
 ];
 
-// ── Tipos ────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Configuración de ícono para un marcador según su categoría */
-interface CategoryIcon {
-  name: string;
-  color: string;
-}
-
-/** Datos culturales y biológicos enriquecidos para el modal */
-interface EnrichedData {
-  descripcion_biologica: string;
-  curiosidades: string[];
-  mitos_y_leyendas_guayanesas: string;
-}
-
-// ── Helpers de categorización ────────────────────────────────────────────────
-
-/**
- * Determina el ícono y color de un marcador basándose en el nombre
- * del registro y su tipo de alimentación.
- *
- * Categorías: Mamífero (🐾), Ave (🐦), Reptil (🐍),
- * Insecto (🦋), Flora (🌿).
- */
-const getCategoryIcon = (item: any): CategoryIcon => {
-  const nombre = (item.nombre_tradicional || '').toLowerCase();
-  const alimentacion = (item.alimentacion || '').toLowerCase();
-
-  if (nombre.includes('jaguar') || nombre.includes('tigre') || nombre.includes('tonina') || nombre.includes('delfín') || nombre.includes('chigüire') || nombre.includes('capibara') || nombre.includes('mono') || nombre.includes('oso')) {
-    return { name: 'paw', color: '#ff9100' };
-  }
-  if (nombre.includes('guacamaya') || nombre.includes('loro') || nombre.includes('ave') || nombre.includes('águila') || nombre.includes('tucán')) {
-    return { name: 'bird', color: '#00b0ff' };
-  }
-  if (nombre.includes('rana') || nombre.includes('sapo') || nombre.includes('serpiente') || nombre.includes('iguana') || nombre.includes('caimán')) {
-    return { name: 'snake', color: '#ff5252' };
-  }
-  if (nombre.includes('mariposa') || nombre.includes('araña') || nombre.includes('escarabajo') || nombre.includes('hormiga')) {
-    return { name: 'bug', color: '#e040fb' };
-  }
-  if (nombre.includes('orquídea') || nombre.includes('flor') || nombre.includes('árbol') || nombre.includes('planta') || nombre.includes('helecho')) {
-    return { name: 'leaf', color: '#00e676' };
-  }
-  if (alimentacion.includes('carnívoro') || alimentacion.includes('herbívoro')) {
-    return { name: 'paw', color: '#ff9100' };
-  }
-  return { name: 'leaf', color: '#00e676' };
+const getCategoryInfo = (item: any) => {
+  const n = (item.nombre_tradicional || '').toLowerCase();
+  if (n.includes('jaguar') || n.includes('tigre') || n.includes('chigüire') || n.includes('capibara') || n.includes('mono') || n.includes('oso') || n.includes('tonina') || n.includes('delfín'))
+    return { icon: 'paw' as const, color: '#ff9100', label: '🐾 Mamífero' };
+  if (n.includes('guacamaya') || n.includes('loro') || n.includes('ave') || n.includes('águila') || n.includes('tucán'))
+    return { icon: 'paw' as const, color: '#00b0ff', label: '🐦 Ave' };
+  if (n.includes('rana') || n.includes('sapo') || n.includes('serpiente') || n.includes('iguana') || n.includes('caimán'))
+    return { icon: 'bug-outline' as const, color: '#ff5252', label: '🦎 Reptil/Anfibio' };
+  if (n.includes('orquídea') || n.includes('flor') || n.includes('árbol') || n.includes('planta') || n.includes('helecho'))
+    return { icon: 'leaf' as const, color: '#00e676', label: '🌿 Flora' };
+  return { icon: 'leaf' as const, color: '#00e676', label: '🌿 Especie' };
 };
 
-// ── Datos enriquecidos (catálogo local) ──────────────────────────────────────
+const formatDate = (d: string) => {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  catch { return ''; }
+};
 
 /**
- * Retorna datos culturales y biológicos para una especie.
- *
- * Simula una llamada async con un delay de 1s. Contiene entradas
- * específicas para jaguar, guacamaya, tonina y chigüire, con un
- * fallback genérico para el resto de especies.
- *
- * @param nombre - Nombre tradicional del registro
+ * Desplaza ligeramente los pines que comparten exactamente la misma coordenada
+ * para que no queden 100% ocultos uno detrás de otro.
  */
-const getEnrichedData = async (nombre: string): Promise<EnrichedData> => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      const nombreLower = (nombre || '').toLowerCase();
-
-      if (nombreLower.includes('jaguar') || nombreLower.includes('tigre') || nombreLower.includes('onza')) {
-        resolve({
-          descripcion_biologica: 'El jaguar (Panthera onca) es el felino más grande de América y el tercero del mundo. Es un superdepredador endémico que habita principalmente en selvas tropicales densas.',
-          curiosidades: [
-            'Tiene la mordida más potente de todos los felinos grandes en relación a su tamaño.',
-            'A diferencia de otros felinos, son excelentes nadadores y cazan frecuentemente en el agua.',
-            'Su patrón de manchas (rosetas) es único en cada individuo, como una huella dactilar.',
-          ],
-          mitos_y_leyendas_guayanesas: 'En la cultura Pemón, el Jaguar (Kaikuse) es un espíritu guardián. Cuenta la leyenda que los grandes chamanes pueden transformarse en jaguares durante la noche para proteger a su tribu y castigar a quienes cazan por codicia y no por necesidad.',
-        });
-        return;
-      }
-
-      if (nombreLower.includes('guacamaya') || nombreLower.includes('loro')) {
-        resolve({
-          descripcion_biologica: 'Las guacamayas son aves del orden Psittaciformes, caracterizadas por su gran tamaño, plumaje colorido y picos fuertes diseñados para romper semillas duras.',
-          curiosidades: [
-            'Son monógamas y se emparejan de por vida.',
-            'Poseen una inteligencia comparable a la de un niño de 3 a 4 años.',
-            'Comen arcilla en las riberas de los ríos para neutralizar toxinas de algunas semillas.',
-          ],
-          mitos_y_leyendas_guayanesas: 'Para los pueblos caribes, las guacamayas eran mensajeras del sol. Su vuelo traía la luz a la tierra y sus plumas caídas se utilizaban en coronas para otorgar sabiduría y visión a los caciques locales.',
-        });
-        return;
-      }
-
-      if (nombreLower.includes('tonina') || nombreLower.includes('delfín')) {
-        resolve({
-          descripcion_biologica: 'La tonina o delfín rosado (Inia geoffrensis) es el delfín de río más grande del mundo. Posee un hocico largo y vibrisas sensoriales para detectar presas en aguas turbias.',
-          curiosidades: [
-            'Nacen de color gris y se vuelven rosados a medida que envejecen.',
-            'Sus vértebras cervicales no están fusionadas, lo que les permite mover la cabeza 180 grados.',
-            'Se orientan principalmente a través de la ecolocalización en las oscuras aguas del Orinoco.',
-          ],
-          mitos_y_leyendas_guayanesas: 'Las toninas están profundamente arraigadas en el folklore del Orinoco. El mito narra que son los habitantes de una civilización sumergida. Se dice que en noches de luna llena, se transforman en hermosas mujeres u hombres para seducir a los viajeros solitarios y llevarlos a su mundo submarino.',
-        });
-        return;
-      }
-
-      if (nombreLower.includes('chigüire') || nombreLower.includes('capibara')) {
-        resolve({
-          descripcion_biologica: 'El chigüire (Hydrochoerus hydrochaeris) es el roedor viviente más grande y pesado del mundo. Es una especie semiacuática altamente social.',
-          curiosidades: [
-            'Pueden permanecer sumergidos bajo el agua hasta por 5 minutos para esconderse de depredadores.',
-            'Sus ojos, nariz y orejas están en la parte superior de la cabeza para ver y respirar mientras nadan.',
-            'Tienen una relación simbiótica con muchas aves que se alimentan de sus parásitos.',
-          ],
-          mitos_y_leyendas_guayanesas: 'En los llanos y sabanas de Guayana, el chigüire es símbolo de abundancia. Una antigua fábula indígena cuenta que el chigüire fue el encargado de enseñar a las demás criaturas cómo nadar y encontrar agua durante la gran sequía.',
-        });
-        return;
-      }
-
-      // Fallback genérico
-      resolve({
-        descripcion_biologica: `El especimen catalogado como ${nombre || 'esta especie'} posee adaptaciones biológicas fascinantes para sobrevivir en los diversos y complejos ecosistemas del escudo guayanés.`,
-        curiosidades: [
-          'Su presencia es un indicador biológico de la salud del ecosistema local.',
-          'Forma parte de una intrincada red trófica que sostiene la biodiversidad de la región.',
-          'Muchos de sus comportamientos y dinámicas poblacionales aún son objeto de estudio por biólogos locales.',
-        ],
-        mitos_y_leyendas_guayanesas: `A través de las generaciones, las comunidades originarias de la Amazonía y Guayana han observado a ${nombre || 'esta especie'}, integrándola en su tradición oral como un espíritu protector de la selva y los ríos, enseñando el respeto por el equilibrio natural.`,
-      });
-    }, 1000);
+const offsetOverlappingRecords = (records: any[]) => {
+  const seen: Record<string, number> = {};
+  return records.map(record => {
+    let lat = parseFloat(record.latitud);
+    let lng = parseFloat(record.longitud);
+    if (isNaN(lat) || isNaN(lng)) return record;
+    
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (seen[key] !== undefined) {
+      seen[key]++;
+      // ~20-30 metros de separación por cada registro repetido en patrón espiral
+      const offset = seen[key] * 0.0002; 
+      const angle = seen[key] * (Math.PI / 3); // 60 grados
+      lat += Math.cos(angle) * offset;
+      lng += Math.sin(angle) * offset;
+    } else {
+      seen[key] = 0;
+    }
+    
+    return { ...record, _renderLat: lat, _renderLng: lng };
   });
 };
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-/**
- * Mapa nativo para visualizar registros de biodiversidad.
- *
- * Muestra marcadores personalizados sobre un MapView con la Guayana
- * resaltada. Al tocar un callout se abre un modal con información
- * enriquecida sobre la especie.
- */
-export default function Map() {
+export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
   const [records, setRecords] = useState<any[]>([]);
-  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
-  const [enrichedData, setEnrichedData] = useState<EnrichedData | null>(null);
-  const [loadingEnrichedData, setLoadingEnrichedData] = useState(false);
+  const [selected, setSelected] = useState<any | null>(null);
 
   useEffect(() => {
-    fetchRecords();
+    (async () => {
+      try {
+        const { data, error } = await supabase.from('registros').select('*');
+        const validRecords = (data || []).filter(r => r.latitud != null && r.longitud != null);
+        setRecords(offsetOverlappingRecords(validRecords));
+      } catch (err) {
+        console.error('Error fetching map records:', err);
+      }
+    })();
   }, []);
 
-  /** Carga datos enriquecidos al seleccionar un registro */
-  useEffect(() => {
-    if (selectedRecord) {
-      setLoadingEnrichedData(true);
-      setEnrichedData(null);
-      getEnrichedData(selectedRecord.nombre_tradicional).then((data) => {
-        setEnrichedData(data);
-        setLoadingEnrichedData(false);
-      });
-    } else {
-      setEnrichedData(null);
-      setLoadingEnrichedData(false);
-    }
-  }, [selectedRecord]);
-
-  /** Trae todos los registros con coordenadas válidas desde Supabase */
-  const fetchRecords = async () => {
-    try {
-      const { data, error } = await supabase.from('registros').select('*');
-      if (error) throw error;
-      setRecords((data || []).filter(r => r.latitud != null && r.longitud != null));
-    } catch (err) {
-      console.error('Error fetching map records:', err);
-    }
+  const handleMarkerPress = (record: any) => {
+    setSelected(record);
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const closeCard = () => setSelected(null);
+
   return (
     <View style={StyleSheet.absoluteFill}>
       <MapView
-        style={styles.map}
-        initialRegion={{
-          latitude: 4.5,
-          longitude: -64.0,
-          latitudeDelta: 40.0,
-          longitudeDelta: 40.0,
-        }}
+        style={{ width: SCREEN_W, height: SCREEN_H }}
+        initialRegion={{ latitude: 4.5, longitude: -64.0, latitudeDelta: 40, longitudeDelta: 40 }}
+        onRegionChangeComplete={onRegionChangeComplete}
+        onPress={closeCard}
       >
-        {/* Máscara de oscurecimiento (todo menos Guayana) */}
         <Polygon
           coordinates={WORLD_REGION}
-          holes={[GUAYANA_REGION]}
+          holes={[GUAYANA_REGION.slice().reverse()]}
           fillColor="rgba(0, 0, 0, 0.7)"
           strokeColor="rgba(0, 0, 0, 0)"
         />
-
-        {/* Borde de la Guayana */}
         <Polygon
           coordinates={GUAYANA_REGION}
           fillColor="transparent"
@@ -247,233 +123,171 @@ export default function Map() {
           strokeWidth={2}
         />
 
-        {/* Marcadores de registros */}
-        {records.map((marker) => {
-          const iconConfig = getCategoryIcon(marker);
-          const lat = parseFloat(marker.latitud);
-          const lng = parseFloat(marker.longitud);
-          if (isNaN(lat) || isNaN(lng)) return null;
+        {records.map((record) => {
+          const lat = record._renderLat;
+          const lng = record._renderLng;
+          if (lat == null || lng == null) return null;
+          const cat = getCategoryInfo(record);
 
           return (
             <Marker
-              key={marker.id}
+              key={record.id}
               coordinate={{ latitude: lat, longitude: lng }}
-              onCalloutPress={() => setSelectedRecord(marker)}
-              tracksViewChanges={Platform.OS !== 'web'}
+              onPress={() => handleMarkerPress(record)}
             >
-              <View style={styles.customMarker}>
-                <View style={[styles.markerImageContainer, { borderColor: iconConfig.color }]}>
-                  {marker.media_url ? (
-                    <Image source={{ uri: marker.media_url }} style={styles.markerImage} />
-                  ) : (
-                    <View style={[styles.markerImage, { backgroundColor: '#333', justifyContent: 'center', alignItems: 'center' }]}>
-                      <Ionicons name="image-outline" size={20} color="#666" />
-                    </View>
-                  )}
-                  <View style={[styles.markerIconBadge, { backgroundColor: iconConfig.color }]}>
-                    <MaterialCommunityIcons name={iconConfig.name as any} size={10} color="#fff" />
-                  </View>
+              <View style={s.pin}>
+                <View style={[s.pinCircle, { borderColor: cat.color }]}>
+                  <Ionicons name={cat.icon} size={18} color={cat.color} />
                 </View>
-                <View style={[styles.markerPointer, { borderTopColor: iconConfig.color }]} />
+                <View style={[s.pinArrow, { borderTopColor: cat.color }]} />
               </View>
-
-              <Callout tooltip>
-                <View style={styles.calloutCard}>
-                  {marker.media_url && <Image source={{ uri: marker.media_url }} style={styles.calloutImage} />}
-                  <View style={styles.calloutContent}>
-                    <Text style={styles.calloutTitle} numberOfLines={1}>{marker.nombre_tradicional}</Text>
-                    <View style={styles.calloutBtn}>
-                      <Text style={styles.calloutBtnText}>Ver detalles</Text>
-                    </View>
-                  </View>
-                </View>
-              </Callout>
             </Marker>
           );
         })}
       </MapView>
 
-      {/* Modal de Detalle (Glassmorphism) */}
-      <Modal
-        visible={!!selectedRecord}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSelectedRecord(null)}
-      >
-        <BlurView intensity={90} tint="dark" style={styles.modalOverlay}>
-          {selectedRecord && (
-            <View style={styles.modalContent}>
-              <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-                {/* Imagen hero */}
-                <View style={styles.modalImageContainer}>
-                  <Image source={{ uri: selectedRecord.media_url }} style={styles.modalImage} />
-                  <TouchableOpacity
-                    style={styles.closeModalBtn}
-                    onPress={() => setSelectedRecord(null)}
-                  >
-                    <Ionicons name="close" size={24} color="#fff" />
-                  </TouchableOpacity>
+      {/* ── Tarjeta flotante (reemplaza Callout nativo) ── */}
+      {selected && (
+        <View style={s.cardWrapper} pointerEvents="box-none">
+          <View style={s.card}>
+            {/* Botón cerrar */}
+            <TouchableOpacity style={s.cardClose} onPress={closeCard}>
+              <Ionicons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
 
-                  <View style={styles.modalHeaderInfo}>
-                    <BlurView intensity={60} tint="dark" style={styles.modalHeaderBlur}>
-                      <Text style={styles.modalTitle}>{selectedRecord.nombre_tradicional}</Text>
-                      {selectedRecord.nombre_cientifico && (
-                         <Text style={styles.modalScientific}>{selectedRecord.nombre_cientifico}</Text>
-                      )}
-                    </BlurView>
-                  </View>
+            {/* Nombre */}
+            <Text style={s.cardTitle} numberOfLines={1}>{selected.nombre_tradicional}</Text>
+            {selected.nombre_cientifico ? (
+              <Text style={s.cardSciName} numberOfLines={1}>{selected.nombre_cientifico}</Text>
+            ) : null}
+
+            {/* Imagen / Media */}
+            {selected.media_url ? (
+              <View style={s.cardImageWrap}>
+                <Image source={{ uri: selected.media_url }} style={s.cardImage} resizeMode="cover" />
+                <View style={s.cardBadge}>
+                  <Text style={s.cardBadgeText}>{getCategoryInfo(selected).label}</Text>
                 </View>
+              </View>
+            ) : (
+              <View style={[s.cardImageWrap, { backgroundColor: '#222', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={40} color="#555" />
+              </View>
+            )}
 
-                {/* Cuerpo del modal */}
-                <View style={styles.modalBody}>
-                  {selectedRecord.descripcion ? (
-                    <Text style={styles.userComment}>
-                      <Text style={{fontWeight: 'bold'}}>Mi nota: </Text>
-                      {selectedRecord.descripcion}
-                    </Text>
-                  ) : null}
+            {/* Descripción */}
+            {selected.descripcion ? (
+              <Text style={s.cardDesc} numberOfLines={3}>{selected.descripcion}</Text>
+            ) : null}
 
-                  {/* Skeleton loader o datos enriquecidos */}
-                  {loadingEnrichedData ? (
-                    <View style={styles.cultureSection}>
-                      {[1, 2].map((key) => (
-                        <View key={key} style={styles.skeletonCard}>
-                          <View style={styles.skeletonTitle} />
-                          <View style={styles.skeletonText} />
-                          <View style={styles.skeletonText} />
-                          <View style={styles.skeletonTextShort} />
-                        </View>
-                      ))}
-                    </View>
-                  ) : enrichedData ? (
-                    <View style={styles.cultureSection}>
-                        <View style={styles.cultureCard}>
-                          <View style={styles.cultureHeader}>
-                            <Ionicons name="leaf-outline" size={20} color="#00e676" />
-                            <Text style={styles.cultureTitle}>Descripción Biológica</Text>
-                          </View>
-                          <Text style={styles.cultureText}>{enrichedData.descripcion_biologica}</Text>
-                        </View>
-
-                        <View style={styles.cultureCard}>
-                          <View style={styles.cultureHeader}>
-                            <Ionicons name="search-outline" size={20} color="#a4ff44" />
-                            <Text style={styles.cultureTitle}>Curiosidades</Text>
-                          </View>
-                          {enrichedData.curiosidades.map((c: string, i: number) => (
-                            <View key={i} style={styles.bulletRow}>
-                              <View style={styles.bulletDot} />
-                              <Text style={styles.cultureTextBullet}>{c}</Text>
-                            </View>
-                          ))}
-                        </View>
-
-                        <View style={styles.cultureCard}>
-                          <View style={styles.cultureHeader}>
-                            <Ionicons name="book-outline" size={20} color="#ff9100" />
-                            <Text style={styles.cultureTitle}>Mitos y Leyendas</Text>
-                          </View>
-                          <Text style={styles.cultureText}>{enrichedData.mitos_y_leyendas_guayanesas}</Text>
-                        </View>
-                    </View>
-                  ) : null}
-                  <View style={{height: 40}} />
+            {/* Meta: coordenadas + fecha */}
+            <View style={s.cardMetaRow}>
+              <View style={s.cardMetaBadge}>
+                <Text style={s.cardMetaText}>📍 {parseFloat(selected.latitud).toFixed(2)}, {parseFloat(selected.longitud).toFixed(2)}</Text>
+              </View>
+              {selected.created_at ? (
+                <View style={s.cardMetaBadge}>
+                  <Text style={s.cardMetaText}>📅 {formatDate(selected.created_at)}</Text>
                 </View>
-              </ScrollView>
+              ) : null}
             </View>
-          )}
-        </BlurView>
-      </Modal>
+
+            {/* Tags */}
+            {(selected.alimentacion || selected.habitat) ? (
+              <View style={s.cardTagsRow}>
+                {selected.alimentacion ? (
+                  <View style={[s.cardTag, { backgroundColor: 'rgba(164,255,68,0.12)' }]}>
+                    <Text style={[s.cardTagText, { color: '#a4ff44' }]}>🍃 {selected.alimentacion}</Text>
+                  </View>
+                ) : null}
+                {selected.habitat ? (
+                  <View style={[s.cardTag, { backgroundColor: 'rgba(0,176,255,0.12)' }]}>
+                    <Text style={[s.cardTagText, { color: '#00b0ff' }]}>🏔️ {selected.habitat}</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        </View>
+      )}
     </View>
   );
 }
 
 // ── Estilos ──────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  map: {
-    width: Dimensions.get('window').width,
-    height: Dimensions.get('window').height,
-  },
+const CARD_W = Math.min(SCREEN_W - 40, 320);
 
-  // Marcadores personalizados
-  customMarker:        { alignItems: 'center', justifyContent: 'center' },
-  markerImageContainer: {
-    width: 48, height: 48, borderRadius: 24, borderWidth: 2,
-    backgroundColor: '#fff', padding: 2,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3, shadowRadius: 4, elevation: 6,
-    position: 'relative',
-  },
-  markerImage:     { width: '100%', height: '100%', borderRadius: 21 },
-  markerIconBadge: {
-    position: 'absolute', bottom: -2, right: -2,
-    width: 18, height: 18, borderRadius: 9,
+const s = StyleSheet.create({
+  // Pin del marcador
+  pin: { alignItems: 'center', width: 44, height: 56 },
+  pinCircle: {
+    width: 40, height: 40, borderRadius: 20,
+    borderWidth: 3, backgroundColor: '#111',
     justifyContent: 'center', alignItems: 'center',
-    borderWidth: 1.5, borderColor: '#fff',
-  },
-  markerPointer: {
-    width: 0, height: 0, backgroundColor: 'transparent',
-    borderStyle: 'solid', borderLeftWidth: 8, borderRightWidth: 8,
-    borderTopWidth: 12, borderLeftColor: 'transparent',
-    borderRightColor: 'transparent', marginTop: -2,
+    elevation: 5,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2, shadowRadius: 2,
+    shadowOpacity: 0.4, shadowRadius: 4,
+  },
+  pinArrow: {
+    width: 0, height: 0,
+    borderLeftWidth: 8, borderRightWidth: 8, borderTopWidth: 12,
+    borderLeftColor: 'transparent', borderRightColor: 'transparent',
+    backgroundColor: 'transparent', marginTop: -2,
   },
 
-  // Callout
-  calloutCard: {
-    width: 200, backgroundColor: 'rgba(10, 25, 20, 0.95)',
-    borderRadius: 12, padding: 10, borderWidth: 1,
-    borderColor: '#a4ff44', flexDirection: 'row', alignItems: 'center',
+  // Tarjeta flotante
+  cardWrapper: {
+    position: 'absolute', bottom: 100, left: 0, right: 0,
+    alignItems: 'center',
   },
-  calloutImage:   { width: 40, height: 40, borderRadius: 8, backgroundColor: '#333', marginRight: 10 },
-  calloutContent: { flex: 1, justifyContent: 'center' },
-  calloutTitle:   { color: '#fff', fontSize: 14, fontWeight: 'bold', marginBottom: 2 },
-  calloutBtn: {
-    backgroundColor: 'rgba(164, 255, 68, 0.15)', paddingVertical: 4,
-    paddingHorizontal: 8, borderRadius: 6, marginTop: 4,
-    alignSelf: 'flex-start', borderWidth: 1,
-    borderColor: 'rgba(164, 255, 68, 0.5)',
+  card: {
+    width: CARD_W,
+    backgroundColor: 'rgba(10, 20, 16, 0.95)',
+    borderRadius: 16,
+    borderWidth: 1, borderColor: 'rgba(164, 255, 68, 0.3)',
+    padding: 14,
+    elevation: 10,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 12,
   },
-  calloutBtnText: { color: '#a4ff44', fontSize: 11, fontWeight: 'bold' },
-
-  // Modal
-  modalOverlay:       { flex: 1 },
-  modalContent:       { flex: 1, backgroundColor: 'transparent' },
-  modalImageContainer: { width: '100%', height: 350, position: 'relative' },
-  modalImage:         { width: '100%', height: '100%', resizeMode: 'cover' },
-  closeModalBtn: {
-    position: 'absolute', top: Platform.OS === 'ios' ? 50 : 20, right: 20,
-    backgroundColor: 'rgba(0,0,0,0.5)', width: 40, height: 40, borderRadius: 20,
+  cardClose: {
+    position: 'absolute', top: 10, right: 10, zIndex: 10,
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center', alignItems: 'center',
   },
-  modalHeaderInfo: { position: 'absolute', bottom: 0, left: 0, right: 0 },
-  modalHeaderBlur: { padding: 20, paddingTop: 30, paddingBottom: 24 },
-  modalTitle:      { color: '#fff', fontSize: 28, fontWeight: 'bold' },
-  modalScientific: { color: '#a4ff44', fontSize: 16, fontStyle: 'italic', marginTop: 4 },
-  modalBody:       { padding: 20, paddingTop: 10 },
-  userComment:     { color: '#e0e0e0', fontSize: 14, fontStyle: 'italic', marginBottom: 20, paddingHorizontal: 4 },
-
-  // Sección cultural
-  cultureSection: { gap: 16 },
-  cultureCard: {
-    backgroundColor: 'rgba(0, 0, 0, 0.4)', borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: 'rgba(164, 255, 68, 0.15)',
+  cardTitle: {
+    color: '#fff', fontSize: 18, fontWeight: 'bold',
+    marginBottom: 2, paddingRight: 30,
   },
-  cultureHeader:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  cultureTitle:      { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  cultureText:       { color: '#ccc', fontSize: 14, lineHeight: 22 },
-  bulletRow:         { flexDirection: 'row', marginBottom: 10, paddingRight: 10 },
-  bulletDot:         { width: 6, height: 6, borderRadius: 3, backgroundColor: '#a4ff44', marginTop: 8, marginRight: 10 },
-  cultureTextBullet: { color: '#ccc', fontSize: 14, lineHeight: 22, flex: 1 },
-
-  // Skeleton
-  skeletonCard: {
-    backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 16, padding: 16, marginBottom: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)',
+  cardSciName: {
+    color: '#a4ff44', fontSize: 12, fontStyle: 'italic', marginBottom: 10,
   },
-  skeletonTitle:     { width: '50%', height: 20, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 6, marginBottom: 16 },
-  skeletonText:      { width: '100%', height: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 4, marginBottom: 10 },
-  skeletonTextShort: { width: '70%', height: 12, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 4 },
+  cardImageWrap: {
+    width: '100%', height: 140, borderRadius: 12,
+    overflow: 'hidden', marginBottom: 10, position: 'relative',
+  },
+  cardImage: { width: '100%', height: '100%' },
+  cardBadge: {
+    position: 'absolute', bottom: 8, left: 8,
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20,
+  },
+  cardBadgeText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  cardDesc: {
+    color: '#aaa', fontSize: 12, lineHeight: 18, marginBottom: 10,
+  },
+  cardMetaRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: 8 },
+  cardMetaBadge: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
+  },
+  cardMetaText: { color: '#888', fontSize: 10 },
+  cardTagsRow: {
+    flexDirection: 'row', gap: 6, flexWrap: 'wrap',
+    paddingTop: 8, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)',
+  },
+  cardTag: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  cardTagText: { fontSize: 10, fontWeight: 'bold' },
 });

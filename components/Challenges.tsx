@@ -23,7 +23,10 @@ import {
 } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { supabase } from '../lib/supabase';
+import { identifySpecies } from '../lib/identifySpecies';
+import { uploadMediaToSupabase } from '../lib/uploadMedia';
 
 // ── Datos estáticos ──────────────────────────────────────────────────────────
 
@@ -142,6 +145,7 @@ export default function Challenges({ onClose }: ChallengesProps) {
   const [showParticipationForm, setShowParticipationForm] = useState(false);
   const [userRecords, setUserRecords] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [hasVotedInCompetition, setHasVotedInCompetition] = useState(false);
 
   /** Obtiene la sesión del usuario y carga la competencia activa */
   const fetchSessionAndActiveComp = async () => {
@@ -204,6 +208,8 @@ export default function Challenges({ onClose }: ChallengesProps) {
           ...p,
           hasVoted: votedIds.has(p.id)
         }));
+
+        setHasVotedInCompetition(participaciones.some(p => p.hasVoted));
       }
 
       // Lógica de Ranking con Empates
@@ -222,9 +228,72 @@ export default function Challenges({ onClose }: ChallengesProps) {
       setMyParticipation(mine || null);
 
       setParticipantes(rankedParticipants);
+
+      // Si la competencia ya expiró, la finalizamos
+      if (activeComp && new Date() >= new Date(activeComp.fecha_fin)) {
+        handleEndCompetition(activeComp.id, rankedParticipants);
+      }
     } catch (err) {
       console.error('Error fetching participantes:', err);
     }
+  };
+
+  /** Finaliza la competencia, resuelve empates aleatoriamente y cierra el evento */
+  const handleEndCompetition = async (compId: string, currentParticipants: Participacion[]) => {
+    if (currentParticipants.length === 0) {
+      // Nadie participó, simplemente cerramos
+      await supabase.from('competencias').update({ activa: false }).eq('id', compId);
+      setActiveComp(null);
+      return;
+    }
+
+    // Buscar el puntaje máximo
+    const maxVotes = currentParticipants[0].votos_count;
+    const topParticipants = currentParticipants.filter(p => p.votos_count === maxVotes);
+
+    if (topParticipants.length > 1) {
+      // HAY UN EMPATE
+      // Seleccionar un ganador aleatorio
+      const winner = topParticipants[Math.floor(Math.random() * topParticipants.length)];
+      
+      try {
+        // Otorgar un voto fantasma (del sistema) para desempatar
+        const { error: insertError } = await supabase.from('votos_reto').insert({
+          participacion_id: winner.id,
+          usuario_id: '00000000-0000-0000-0000-000000000000', // Un ID UUID nulo para representar al sistema
+        });
+        
+        if (insertError) {
+          // Si el constraint de UUID nos bloquea, actualizamos el contador manualmente a la fuerza
+          await supabase
+            .from('participaciones_reto')
+            .update({ votos_count: winner.votos_count + 1 })
+            .eq('id', winner.id);
+        }
+
+        Alert.alert('¡Empate Resuelto!', `Había un empate entre ${topParticipants.length} participantes con ${maxVotes} likes. ¡El desempate automático (voto aleatorio) ha elegido a ${winner.profiles.username} como ganador definitivo!`);
+        
+        // Recargar para reflejar el voto extra antes de cerrar
+        const { data: updatedData } = await supabase
+          .from('participaciones_reto')
+          .select(`*, profiles:usuario_id (username, nombre, foto_perfil)`)
+          .eq('competencia_id', compId)
+          .order('votos_count', { ascending: false });
+          
+        if (updatedData) {
+          setParticipantes(updatedData.map((p, i) => ({ ...p, rank: i === 0 ? 1 : 2 })));
+        }
+      } catch (e) {
+        console.error('Error resolviendo empate:', e);
+      }
+    } else {
+      Alert.alert('¡Competencia Finalizada!', `El ganador indiscutible es ${topParticipants[0].profiles.username} con ${maxVotes} likes. 🏆`);
+    }
+
+    // Cerramos la competencia
+    await supabase.from('competencias').update({ activa: false }).eq('id', compId);
+    setActiveComp(null);
+    setThemeVotes({'1': 0, '2': 0, '3': 0, '4': 0, '5': 0});
   };
 
   /** Filtra registros del usuario que coincidan con la temática activa */
@@ -300,6 +369,106 @@ export default function Challenges({ onClose }: ChallengesProps) {
     }
   };
 
+  /** Permite al usuario subir una foto nueva para el reto, que es evaluada por la IA al instante */
+  const handleUploadNewPhoto = async () => {
+    if (!currentUserId || !activeComp) return;
+
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'Se necesita acceso a la galería.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.7,
+        base64: true,
+      });
+
+      if (result.canceled || !result.assets || result.assets.length === 0) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      if (!asset.base64) {
+        Alert.alert('Error', 'No se pudo leer la imagen.');
+        return;
+      }
+
+      setIsSubmitting(true);
+      Alert.alert('Analizando...', 'La IA está verificando si tu foto cumple con la temática del reto.');
+
+      // 1. Identificar especie
+      const aiResult = await identifySpecies(asset.base64);
+      const topCandidate = aiResult.candidates[0];
+
+      // 2. Validar temática
+      const temaLower = activeComp.tema.toLowerCase();
+      const nombreLower = (topCandidate.nombreTradicional || '').toLowerCase();
+      
+      const keywordsMap: Record<string, string[]> = {
+        'guacamaya': ['guacamaya', 'ara', 'loro', 'psittacidae'],
+        'orquídea': ['orquídea', 'flor', 'orchid', 'catleya'],
+        'mono araguato': ['mono', 'araguato', 'alouatta', 'primate'],
+        'colibrí': ['colibrí', 'picaflor', 'trochilidae', 'zunzún'],
+        'araguaney': ['araguaney', 'handroanthus', 'árbol', 'tabebuia']
+      };
+      
+      const currentKeywords = keywordsMap[temaLower] || [temaLower];
+      const isMatch = currentKeywords.some(kw => nombreLower.includes(kw));
+
+      if (!isMatch) {
+        Alert.alert(
+          'Validación fallida',
+          `La IA detectó "${topCandidate.nombreTradicional}", pero el reto es de "${activeComp.tema}". ¡Sigue buscando!`
+        );
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 3. Subir imagen a Storage
+      const mediaUrl = await uploadMediaToSupabase(asset.uri, 'image/jpeg');
+
+      // 4. Crear registro en la BD (para que le quede en el perfil)
+      const { data: newRecord, error: recordError } = await supabase
+        .from('registros')
+        .insert({
+          usuario_id: currentUserId,
+          media_url: mediaUrl,
+          media_type: 'image',
+          latitud: 0, // No GPS needed for challenge direct uploads
+          longitud: 0,
+          nombre_tradicional: topCandidate.nombreTradicional,
+          nombre_cientifico: topCandidate.nombreCientifico,
+          metadatos_especie: {
+            peligrosidad: topCandidate.peligrosidad,
+            endemismo: topCandidate.endemismo,
+            certeza_ia: topCandidate.iaCerteza,
+            descripcion_biologica: topCandidate.descripcionBiologica,
+            curiosidades: topCandidate.curiosidades,
+            mitos: topCandidate.mitos,
+            all_candidates: aiResult.candidates
+          }
+        })
+        .select()
+        .single();
+
+      if (recordError || !newRecord) {
+        throw new Error('No se pudo guardar el registro.');
+      }
+
+      // 5. Inscribir automáticamente en el reto
+      await submitParticipation(newRecord);
+
+    } catch (err: any) {
+      console.error('Error in handleUploadNewPhoto:', err);
+      Alert.alert('Error', err.message || 'Ocurrió un error inesperado al procesar la foto.');
+      setIsSubmitting(false);
+    }
+  };
+
   const removeParticipation = async () => {
     if (!myParticipation || !activeComp) return;
 
@@ -333,6 +502,11 @@ export default function Challenges({ onClose }: ChallengesProps) {
   const handleVote = async (participacionId: string) => {
     if (!currentUserId) {
       Alert.alert('Acceso restringido', 'Debes iniciar sesión para votar.');
+      return;
+    }
+
+    if (hasVotedInCompetition) {
+      Alert.alert('Voto único', 'Ya utilizaste tu único voto en este reto.');
       return;
     }
 
@@ -470,9 +644,9 @@ export default function Challenges({ onClose }: ChallengesProps) {
             <TouchableOpacity 
               style={[styles.likeBtn, item.hasVoted && styles.likeBtnActive]}
               onPress={() => handleVote(item.id)}
-              disabled={item.hasVoted}
+              disabled={item.hasVoted || (hasVotedInCompetition && !item.hasVoted)}
             >
-              <Ionicons name={item.hasVoted ? "heart" : "heart-outline"} size={20} color={item.hasVoted ? "#fff" : "#a4ff44"} />
+              <Ionicons name={item.hasVoted ? "heart" : "heart-outline"} size={20} color={item.hasVoted ? "#fff" : (hasVotedInCompetition ? "#555" : "#a4ff44")} />
             </TouchableOpacity>
           )}
         </View>
@@ -495,9 +669,20 @@ export default function Challenges({ onClose }: ChallengesProps) {
       ) : activeComp ? (
         <ScrollView style={styles.content}>
           <BlurView intensity={20} tint="dark" style={styles.activeBanner}>
-            <Text style={styles.activeTag}>COMPETENCIA ACTIVA</Text>
-            <Text style={styles.activeTitle}>{activeComp.titulo}</Text>
-            <Text style={styles.activeTema}>Temática: {activeComp.tema}</Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <View>
+                <Text style={styles.activeTag}>COMPETENCIA ACTIVA</Text>
+                <Text style={styles.activeTitle}>{activeComp.titulo}</Text>
+                <Text style={styles.activeTema}>Temática: {activeComp.tema}</Text>
+              </View>
+              {/* Botón de DEV para inicializar/forzar fin (ya que pidieron "inicialices" el desempate manual si hace falta) */}
+              <TouchableOpacity 
+                style={{ backgroundColor: 'rgba(255,82,82,0.2)', padding: 8, borderRadius: 8, borderWidth: 1, borderColor: '#ff5252' }}
+                onPress={() => handleEndCompetition(activeComp.id, participantes)}
+              >
+                <Text style={{ color: '#ff5252', fontSize: 10, fontWeight: 'bold' }}>FORZAR FIN</Text>
+              </TouchableOpacity>
+            </View>
           </BlurView>
 
           <Text style={styles.sectionTitle}>Ranking General</Text>
@@ -525,9 +710,26 @@ export default function Challenges({ onClose }: ChallengesProps) {
 
           {showParticipationForm && !myParticipation && (
             <View style={styles.formContainer}>
-              <Text style={styles.formTitle}>Elige tu mejor registro de {activeComp.tema}</Text>
+              <Text style={styles.formTitle}>Participa en: {activeComp.tema}</Text>
+              
+              <TouchableOpacity 
+                style={styles.uploadNewBtn} 
+                onPress={handleUploadNewPhoto}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <>
+                    <Ionicons name="camera-outline" size={24} color="#000" />
+                    <Text style={styles.uploadNewBtnText}>Subir foto nueva para el reto</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <Text style={styles.formSubtitle}>O elige uno de tus registros previos verificados:</Text>
+
               {userRecords.length === 0 ? (
-                <Text style={styles.noRecordsText}>No tienes registros de esta temática. ¡Ve a explorar!</Text>
+                <Text style={styles.noRecordsText}>No tienes registros previos de esta temática.</Text>
               ) : (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recordPicker}>
                   {userRecords.map(r => (
@@ -535,6 +737,7 @@ export default function Challenges({ onClose }: ChallengesProps) {
                       key={r.id} 
                       style={styles.recordOption}
                       onPress={() => submitParticipation(r)}
+                      disabled={isSubmitting}
                     >
                       <Image source={{ uri: r.media_url }} style={styles.recordImage} />
                     </TouchableOpacity>
@@ -681,7 +884,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.05)', margin: 20, padding: 20, borderRadius: 20,
     borderWidth: 1, borderColor: 'rgba(164, 255, 68, 0.2)',
   },
-  formTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  formTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 15, textAlign: 'center' },
+  formSubtitle: { color: '#ccc', fontSize: 14, marginTop: 15, marginBottom: 10, textAlign: 'center' },
+  uploadNewBtn: { 
+    backgroundColor: '#a4ff44', flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'center', padding: 14, borderRadius: 12, gap: 8,
+  },
+  uploadNewBtnText: { color: '#000', fontWeight: 'bold', fontSize: 15 },
   recordPicker: { flexDirection: 'row', marginBottom: 15 },
   recordOption: { marginRight: 12 },
   recordImage: { width: 100, height: 100, borderRadius: 12, borderWidth: 2, borderColor: 'transparent' },

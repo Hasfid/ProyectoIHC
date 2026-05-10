@@ -28,11 +28,12 @@ import {
   TextInput,
   Alert,
   DeviceEventEmitter,
+  Platform,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadMediaToSupabase } from '../../lib/uploadMedia';
-import { getDrafts, deleteDraft, syncDrafts, DraftRecord, DRAFTS_UPDATED_EVENT } from '../../lib/drafts';
+import { getDrafts, deleteDraft, syncDrafts, updateDraft, DraftRecord, DRAFTS_UPDATED_EVENT, NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
 import { i18n, changeLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
@@ -46,6 +47,7 @@ export default function ProfileScreen() {
   const [activeTab, setActiveTab] = useState<Tab>('records');
   const [recordSubTab, setRecordSubTab] = useState<RecordSubTab>('published');
   const [offlineDrafts, setOfflineDrafts] = useState<DraftRecord[]>([]);
+  const [selectingDraft, setSelectingDraft] = useState<DraftRecord | null>(null);
 
   // Si viene de Scanner con tab=pending, abrir esa sub-pestaña
   useEffect(() => {
@@ -60,6 +62,31 @@ export default function ProfileScreen() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
+  const [candidateCounts, setCandidateCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const metadatos = selectingDraft?.metadatos_especie as any;
+    if (metadatos?.all_candidates) {
+      const fetchCounts = async () => {
+        const counts: Record<string, number> = {};
+        for (const cand of metadatos.all_candidates) {
+          try {
+            const { count } = await supabase
+              .from('registros')
+              .select('*', { count: 'exact', head: true })
+              .ilike('nombre_cientifico', `%${cand.nombreCientifico}%`);
+            counts[cand.nombreCientifico] = count || 0;
+          } catch {
+            counts[cand.nombreCientifico] = 0;
+          }
+        }
+        setCandidateCounts(counts);
+      };
+      fetchCounts();
+    } else {
+      setCandidateCounts({});
+    }
+  }, [selectingDraft]);
 
   useEffect(() => {
     let channel: any;
@@ -69,22 +96,31 @@ export default function ProfileScreen() {
       const uid = currentSession.user.id;
 
       const fetchUnread = async () => {
-        const { data } = await supabase
-          .from('notificaciones')
-          .select('id, tipo, mensaje')
-          .eq('usuario_id', uid)
-          .or('leido.eq.false,leido.is.null');
-        
-        if (data) {
-          const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
-          setUnreadCount(valid.length);
+        try {
+          const { data, error } = await supabase
+            .from('notificaciones')
+            .select('id, tipo, mensaje')
+            .eq('usuario_id', uid)
+            .or('leido.eq.false,leido.is.null');
+          
+          if (error) {
+            console.error('Error fetching unread (profile):', error.message);
+            return;
+          }
+
+          if (data) {
+            const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
+            setUnreadCount(valid.length);
+          }
+        } catch (err) {
+          console.error('fetchUnread exception (profile):', err);
         }
       };
       
       fetchUnread();
 
       channel = supabase
-        .channel(`unread-notifs-profile-${uid}`)
+        .channel(`unread-notifs-profile-${uid}-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notificaciones', filter: `usuario_id=eq.${uid}` }, () => {
           fetchUnread();
         })
@@ -94,9 +130,19 @@ export default function ProfileScreen() {
         fetchUnread();
       });
 
+      // Escuchar cuando se crea una notificación desde el sync de drafts
+      const notifCreatedListener = DeviceEventEmitter.addListener(NOTIFICATION_UPDATED_EVENT, () => {
+        fetchUnread();
+      });
+
+      // Polling cada 10s como fallback por si Realtime no conecta
+      const pollInterval = setInterval(fetchUnread, 10_000);
+
       return () => {
         if (channel) supabase.removeChannel(channel);
         eventListener.remove();
+        notifCreatedListener.remove();
+        clearInterval(pollInterval);
       };
     };
     
@@ -205,11 +251,13 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!session?.user?.id) return;
     const channel = supabase
-      .channel('profile-stats-channel')
+      .channel(`profile-stats-${session.user.id}-${Date.now()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'seguidores' }, () => {
         fetchStats(session.user.id);
       })
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) console.error('Error profile-stats-channel:', err);
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -235,22 +283,17 @@ export default function ProfileScreen() {
     setOfflineDrafts(drafts);
   };
 
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
+
+  const confirmDeleteDraft = async () => {
+    if (deletingDraftId) {
+      await deleteDraft(deletingDraftId);
+      setDeletingDraftId(null);
+    }
+  };
+
   const handleDeleteDraft = (draftId: string) => {
-    Alert.alert(
-      'Eliminar pendiente',
-      '¿Eliminar este registro pendiente? No se subirá a la nube.',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteDraft(draftId);
-            // Ya no hace falta loadOfflineDrafts() aquí porque el evento lo hará
-          },
-        },
-      ]
-    );
+    setDeletingDraftId(draftId);
   };
 
   const [retryingId, setRetryingId] = useState<string | null>(null);
@@ -270,6 +313,34 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'No se pudo reintentar la sincronización.');
     } finally {
       setRetryingId(null);
+    }
+  };
+
+  const handleSelectCandidate = async (candidate: any) => {
+    if (!selectingDraft) return;
+    try {
+      await updateDraft(selectingDraft.id, {
+        status: 'pending_upload',
+        nombre_tradicional: candidate.nombreTradicional,
+        nombre_cientifico: candidate.nombreCientifico,
+        peligrosidad: candidate.peligrosidad,
+        endemismo: candidate.endemismo,
+        ia_certeza: candidate.iaCerteza,
+        metadatos_especie: {
+          ...selectingDraft.metadatos_especie,
+          origen: 'scanner-offline-user-selected',
+          descripcion_biologica: candidate.descripcionBiologica,
+          curiosidades: candidate.curiosidades,
+          mitos: candidate.mitos,
+        }
+      });
+      setSelectingDraft(null);
+      // Opcional: intentar sync automático
+      syncDrafts();
+      Alert.alert('Especie confirmada', 'El registro está listo para subir.');
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'No se pudo guardar la selección.');
     }
   };
 
@@ -766,10 +837,6 @@ export default function ProfileScreen() {
             {/* ── Sub-tab: Pendientes (offline drafts) ── */}
             {recordSubTab === 'pending' && (
               <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
-                <Text style={styles.sectionTitle}>Registros Pendientes</Text>
-                <Text style={{ color: '#888', fontSize: 13, marginBottom: 16 }}>
-                  Se subirán automáticamente cuando haya conexión a internet.
-                </Text>
 
                 {offlineDrafts.length === 0 ? (
                   <View style={{ alignItems: 'center', padding: 40 }}>
@@ -786,38 +853,46 @@ export default function ProfileScreen() {
                         </Text>
                         <View style={[
                           styles.draftStatusBadge,
-                          draft.status === 'pending_ai' ? styles.draftStatusAI : styles.draftStatusUpload
+                          draft.status === 'pending_ai' ? styles.draftStatusAI : 
+                          draft.status === 'pending_selection' ? { backgroundColor: '#fff3e0' } :
+                          draft.status === 'rejected' ? { backgroundColor: '#ffebee' } : styles.draftStatusUpload
                         ]}>
                           <Ionicons
-                            name={draft.status === 'pending_ai' ? 'sparkles-outline' : 'cloud-upload-outline'}
+                            name={draft.status === 'pending_ai' ? 'sparkles-outline' : draft.status === 'pending_selection' ? 'help-circle-outline' : draft.status === 'rejected' ? 'close-circle-outline' : 'cloud-upload-outline'}
                             size={12}
-                            color={draft.status === 'pending_ai' ? '#e65100' : '#1565c0'}
+                            color={draft.status === 'pending_ai' ? '#e65100' : draft.status === 'pending_selection' ? '#ef6c00' : draft.status === 'rejected' ? '#d32f2f' : '#1565c0'}
                           />
                           <Text style={[
                             styles.draftStatusText,
-                            { color: draft.status === 'pending_ai' ? '#e65100' : '#1565c0' }
+                            { color: draft.status === 'pending_ai' ? '#e65100' : draft.status === 'pending_selection' ? '#ef6c00' : draft.status === 'rejected' ? '#d32f2f' : '#1565c0' }
                           ]}>
-                            {draft.status === 'pending_ai' ? 'Esperando IA' : 'Esperando subida'}
+                            {draft.status === 'pending_ai' ? 'Esperando IA' : draft.status === 'pending_selection' ? 'Falta confirmar' : draft.status === 'rejected' ? 'Rechazado' : 'Esperando subida'}
                           </Text>
                         </View>
-                        {draft.last_error && (
-                          <Text style={styles.draftError} numberOfLines={1}>⚠ {draft.last_error}</Text>
-                        )}
                         <Text style={styles.draftDate}>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
                       </View>
                       <View style={styles.draftActions}>
-                        <TouchableOpacity
-                          style={styles.draftRetryBtn}
-                          onPress={() => handleRetryDraft(draft.id)}
-                          disabled={retryingId === draft.id}
-                        >
-                          {retryingId === draft.id
-                            ? <ActivityIndicator size={16} color="#2e7d32" />
-                            : <Ionicons name="refresh-outline" size={20} color="#2e7d32" />
-                          }
-                        </TouchableOpacity>
+                        {draft.status === 'pending_selection' ? (
+                          <TouchableOpacity
+                            style={[styles.draftRetryBtn, { backgroundColor: '#ef6c00', width: 'auto', paddingHorizontal: 12 }]}
+                            onPress={() => setSelectingDraft(draft)}
+                          >
+                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>CONFIRMAR</Text>
+                          </TouchableOpacity>
+                        ) : draft.status !== 'rejected' && (
+                          <TouchableOpacity
+                            style={styles.draftRetryBtn}
+                            onPress={() => handleRetryDraft(draft.id)}
+                            disabled={retryingId === draft.id}
+                          >
+                            {retryingId === draft.id
+                              ? <ActivityIndicator size={16} color="#2e7d32" />
+                              : <Ionicons name="refresh-outline" size={20} color="#2e7d32" />
+                            }
+                          </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                           style={styles.draftDeleteBtn}
                           onPress={() => handleDeleteDraft(draft.id)}
@@ -1055,7 +1130,105 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
+        {/* Modal de Selección de Especie */}
+        {selectingDraft && (
+          <Modal visible transparent animationType="slide">
+            <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
+              <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: Dimensions.get('window').height * 0.85 }}>
+                <View style={{ padding: 20, borderBottomWidth: 1, borderColor: '#eee', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Selecciona la Especie</Text>
+                  <TouchableOpacity onPress={() => setSelectingDraft(null)}>
+                    <Ionicons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                </View>
+                <ScrollView contentContainerStyle={{ padding: 20 }}>
+                  <Image source={{ uri: selectingDraft.media_uri }} style={{ width: '100%', height: 200, borderRadius: 16, marginBottom: 20 }} />
+                  <Text style={{ fontSize: 16, color: '#666', marginBottom: 12 }}>¿Cuál de estos identificaste?</Text>
+                  
+                  {((selectingDraft.metadatos_especie as any)?.all_candidates || []).map((cand: any, idx: number) => (
+                    <TouchableOpacity 
+                      key={idx}
+                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8faf9', padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e0e0e0' }}
+                      onPress={() => handleSelectCandidate(cand)}
+                    >
+                      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#e8f5e9', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                        <Ionicons name="paw" size={24} color="#2e7d32" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#111' }}>{cand.nombreTradicional}</Text>
+                        <Text style={{ fontSize: 14, color: '#666', fontStyle: 'italic' }}>{cand.nombreCientifico}</Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 12 }}>
+                          <Text style={{ fontSize: 12, color: '#2e7d32' }}>Certeza: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
+                          {candidateCounts[cand.nombreCientifico] !== undefined && (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                              <Ionicons name="eye-outline" size={12} color="#2e7d32" style={{ marginRight: 4 }} />
+                              <Text style={{ fontSize: 11, color: '#2e7d32', fontWeight: 'bold' }}>
+                                {candidateCounts[cand.nombreCientifico]} {candidateCounts[cand.nombreCientifico] === 1 ? 'registro' : 'registros'}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* Modal de Confirmación de Borrado */}
+        <DeleteConfirmationModal 
+          visible={!!deletingDraftId}
+          onClose={() => setDeletingDraftId(null)}
+          onConfirm={confirmDeleteDraft}
+        />
+
     </View>
+  );
+}
+
+// ── Modales adicionales ──────────────────────────────────────────────────
+
+function DeleteConfirmationModal({ 
+  visible, 
+  onClose, 
+  onConfirm 
+}: { 
+  visible: boolean, 
+  onClose: () => void, 
+  onConfirm: () => void 
+}) {
+  if (!visible) return null;
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <View style={{ backgroundColor: '#fff', padding: 24, borderRadius: 16, width: '100%', maxWidth: 320, alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#ffebee', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="trash-outline" size={32} color="#d32f2f" />
+          </View>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 8, color: '#111' }}>Eliminar pendiente</Text>
+          <Text style={{ fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+            ¿Estás seguro que deseas eliminar este registro pendiente? No se subirá a la nube.
+          </Text>
+          <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
+            <TouchableOpacity 
+              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#f5f5f5', alignItems: 'center' }}
+              onPress={onClose}
+            >
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#666' }}>Cancelar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#d32f2f', alignItems: 'center' }}
+              onPress={onConfirm}
+            >
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#fff' }}>Eliminar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 

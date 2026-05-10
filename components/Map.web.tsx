@@ -19,17 +19,10 @@ import { supabase } from '../lib/supabase';
 
 // ── Geometría ────────────────────────────────────────────────────────────────
 
-/** Polígono aproximado de la Guayana venezolana */
-const GUAYANA_POLYGON: [number, number][] = [
-  [8.5, -60.0],
-  [8.0, -63.0],
-  [7.5, -65.0],
-  [6.0, -68.0],
-  [1.0, -67.0],
-  [1.0, -64.0],
-  [4.0, -61.0],
-  [7.0, -60.0],
-];
+import { GUAYANA_POLYGON as GF_POLYGON } from '../lib/geofence';
+
+/** Polígono aproximado de la Guayana venezolana, transformado para Leaflet */
+const GUAYANA_POLYGON: [number, number][] = GF_POLYGON.map(p => [p.latitude, p.longitude]);
 
 /** Polígono que cubre todo el mundo (para el efecto de oscurecimiento) */
 const WORLD_BOUNDS: [number, number][] = [
@@ -157,6 +150,33 @@ const formatDate = (dateStr: string): string => {
   }
 };
 
+/**
+ * Desplaza ligeramente los pines que comparten exactamente la misma coordenada
+ * para que no queden 100% ocultos uno detrás de otro.
+ */
+const offsetOverlappingRecords = (records: any[]) => {
+  const seen: Record<string, number> = {};
+  return records.map(record => {
+    let lat = parseFloat(record.latitud);
+    let lng = parseFloat(record.longitud);
+    if (isNaN(lat) || isNaN(lng)) return record;
+    
+    const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
+    if (seen[key] !== undefined) {
+      seen[key]++;
+      // ~20-30 metros de separación por cada registro repetido en patrón espiral
+      const offset = seen[key] * 0.0002; 
+      const angle = seen[key] * (Math.PI / 3); // 60 grados
+      lat += Math.cos(angle) * offset;
+      lng += Math.sin(angle) * offset;
+    } else {
+      seen[key] = 0;
+    }
+    
+    return { ...record, _renderLat: lat, _renderLng: lng };
+  });
+};
+
 // ── Componente ───────────────────────────────────────────────────────────────
 
 /**
@@ -165,7 +185,7 @@ const formatDate = (dateStr: string): string => {
  * Carga las dependencias de Leaflet de forma asíncrona y espera a que
  * el CSS esté disponible antes de renderizar para evitar FOUC.
  */
-export default function MapWeb() {
+export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
   const [cssReady, setCssReady] = useState(false);
@@ -187,8 +207,8 @@ export default function MapWeb() {
       import('react-leaflet'),
       import('leaflet'),
     ]).then(([reactLeaflet, L]) => {
-      const { MapContainer, TileLayer, Marker, Popup, Polygon } = reactLeaflet;
-      setMapComponents({ MapContainer, TileLayer, Marker, Popup, Polygon, L: L.default || L });
+      const { MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents } = reactLeaflet;
+      setMapComponents({ MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents, L: L.default || L });
     }).catch(err => {
       console.error('Error loading Leaflet:', err);
     });
@@ -201,7 +221,8 @@ export default function MapWeb() {
     try {
       const { data, error } = await supabase.from('registros').select('*');
       if (error) throw error;
-      setRecords((data || []).filter(r => r.latitud != null && r.longitud != null));
+      const validRecords = (data || []).filter(r => r.latitud != null && r.longitud != null);
+      setRecords(offsetOverlappingRecords(validRecords));
     } catch (err) {
       console.error('Error fetching map records (web):', err);
     }
@@ -212,7 +233,19 @@ export default function MapWeb() {
     return <View style={styles.container} />;
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, Polygon, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents, L } = MapComponents;
+
+  const MapEventsComponent = () => {
+    useMapEvents({
+      moveend: (e: any) => {
+        if (onRegionChangeComplete) {
+          const center = e.target.getCenter();
+          onRegionChangeComplete({ latitude: center.lat, longitude: center.lng });
+        }
+      }
+    });
+    return null;
+  };
 
   /** Crea un DivIcon de Leaflet con foto circular y flecha de color */
   const createCustomIcon = (imageUrl: string, color: string) => {
@@ -241,6 +274,7 @@ export default function MapWeb() {
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
       >
+        <MapEventsComponent />
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
@@ -260,9 +294,9 @@ export default function MapWeb() {
 
         {/* Pins de registros */}
         {records.map((record: any) => {
-          const lat = parseFloat(record.latitud);
-          const lng = parseFloat(record.longitud);
-          if (isNaN(lat) || isNaN(lng)) return null;
+          const lat = record._renderLat;
+          const lng = record._renderLng;
+          if (lat == null || lng == null) return null;
 
           const color = getCategoryColor(record);
 

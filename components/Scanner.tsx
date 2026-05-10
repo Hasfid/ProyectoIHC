@@ -145,7 +145,7 @@ export default function Scanner() {
 
   // ── Cargar desde galería → guardar local ──────────────────────────────────
 
-  /** Abre la galería, selecciona una imagen y la guarda como borrador. */
+  /** Abre la galería, selecciona una imagen y navega al flujo de crear registro (mapa). */
   const handlePickMedia = async () => {
     if (phase !== 'scanning') return;
 
@@ -158,34 +158,14 @@ export default function Scanner() {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
 
-    try {
-      setPhase('saving');
-
-      const fileName = `ecos_${Date.now()}.jpg`;
-      const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
-      await FileSystem.copyAsync({ from: asset.uri, to: permanentUri });
-
-      const location = await getLocation();
-
-      await saveDraft({
-        status: 'pending_ai',
-        nombre_tradicional: 'Captura pendiente',
-        nombre_cientifico: '',
-        peligrosidad: '',
-        alimentacion: '',
-        endemismo: '',
-        descripcion: '',
-        media_uri: permanentUri,
-        tipo_media: 'imagen',
-        latitud: location.lat,
-        longitud: location.lng,
-      });
-
-      showSavedFeedback();
-    } catch (err: any) {
-      setPhase('scanning');
-      Alert.alert('Error', err?.message ?? 'No se pudo guardar.', [{ text: 'OK' }]);
-    }
+    // Navegar al flujo de carga (que abrirá el mapa y luego guardará)
+    router.push({
+      pathname: '/create-record',
+      params: {
+        mediaUrl: asset.uri,
+        tipoMedia: (asset.mimeType ?? 'image/jpeg').startsWith('video') ? 'video' : 'imagen',
+      },
+    });
   };
 
   // ── Early returns (permisos) ──────────────────────────────────────────────

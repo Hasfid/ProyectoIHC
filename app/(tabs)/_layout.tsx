@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from 'react-native';
 import { supabase } from '../../lib/supabase';
+import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
 
 const { Navigator } = createMaterialTopTabNavigator();
 const MaterialTopTabs = withLayoutContext(Navigator);
@@ -35,23 +36,32 @@ export default function TabLayout() {
       const uid = session.user.id;
 
       const fetchUnread = async () => {
-        const { data } = await supabase
-          .from('notificaciones')
-          .select('id, tipo, mensaje')
-          .eq('usuario_id', uid)
-          .or('leido.eq.false,leido.is.null');
-        
-        if (data) {
-          // Filtrar notificaciones duplicadas de seguimiento generadas por trigger viejo
-          const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
-          setUnreadCount(valid.length);
+        try {
+          const { data, error } = await supabase
+            .from('notificaciones')
+            .select('id, tipo, mensaje')
+            .eq('usuario_id', uid)
+            .or('leido.eq.false,leido.is.null');
+          
+          if (error) {
+            console.error('Error fetching unread (layout):', error.message);
+            return;
+          }
+
+          if (data) {
+            // Filtrar notificaciones duplicadas de seguimiento generadas por trigger viejo
+            const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
+            setUnreadCount(valid.length);
+          }
+        } catch (err) {
+          console.error('fetchUnread exception (layout):', err);
         }
       };
       
       fetchUnread();
 
       channel = supabase
-        .channel(`unread-notifs-layout-${uid}`)
+        .channel(`unread-notifs-layout-${uid}-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notificaciones', filter: `usuario_id=eq.${uid}` }, () => {
           fetchUnread();
         })
@@ -61,9 +71,19 @@ export default function TabLayout() {
         fetchUnread();
       });
 
+      // Escuchar cuando se crea una notificación desde el sync de drafts
+      const notifCreatedListener = DeviceEventEmitter.addListener(NOTIFICATION_UPDATED_EVENT, () => {
+        fetchUnread();
+      });
+
+      // Polling cada 10s como fallback por si Realtime no conecta
+      const pollInterval = setInterval(fetchUnread, 10_000);
+
       return () => {
         if (channel) supabase.removeChannel(channel);
         eventListener.remove();
+        notifCreatedListener.remove();
+        clearInterval(pollInterval);
       };
     };
     
