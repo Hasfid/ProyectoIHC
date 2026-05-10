@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useOfflineSync } from "../lib/useOfflineSync";
 import { View, ActivityIndicator } from "react-native";
+import { initI18n } from '../lib/i18n';
 
 export default function RootLayout() {
   const router = useRouter();
@@ -25,6 +26,9 @@ export default function RootLayout() {
   useOfflineSync();
 
   useEffect(() => {
+    // Inicializar idioma
+    initI18n();
+    
     // Escuchar el estado de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!segments.length) return; // Esperar a que el router esté montado

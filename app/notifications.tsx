@@ -16,6 +16,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  DeviceEventEmitter,
 } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -38,26 +39,85 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
+    let channel: any;
+
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      channel = supabase
+        .channel(`notifs-screen-${session.user.id}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notificaciones', filter: `usuario_id=eq.${session.user.id}` },
+          (payload) => {
+            const newNotif = payload.new as Notificacion;
+            
+            // Filtrar duplicados de seguimiento
+            if (newNotif.tipo === 'seguidor' && !newNotif.mensaje?.includes('||')) return;
+
+            // Añadir visualmente al principio de la lista
+            setNotifications((prev) => [newNotif, ...prev]);
+
+            // Marcar como leída silenciosamente porque el usuario está viendo la pantalla
+            if (!newNotif.leido) {
+              // Optimistic local update (ya pre-pendimos arriba, así que la volvemos true acá)
+              setNotifications(prev => prev.map(n => n.id === newNotif.id ? { ...n, leido: true } : n));
+              
+              supabase.from('notificaciones').update({ leido: true }).eq('id', newNotif.id).then(() => {
+                DeviceEventEmitter.emit('NOTIFICATIONS_READ');
+              });
+            }
+          }
+        )
+        .subscribe();
+    };
+
     fetchNotifications();
+    init();
+
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   /** Carga todas las notificaciones del usuario autenticado */
   const fetchNotifications = async () => {
     try {
+      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setLoading(false);
-        return;
-      }
+      if (!session) return;
 
       const { data, error } = await supabase
         .from('notificaciones')
         .select('*')
         .eq('usuario_id', session.user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
 
       if (error) throw error;
-      setNotifications(data || []);
+      
+      const filtered = (data || []).filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
+      setNotifications(filtered);
+
+      // Marcar todas como leídas en segundo plano automáticamente al verlas
+      const unreadIds = filtered.filter(n => !n.leido).map(n => n.id);
+      if (unreadIds.length > 0) {
+        // Actualización optimista en la UI local para quitar el estado de "nuevo" al instante
+        setNotifications(prev => prev.map(n => unreadIds.includes(n.id) ? { ...n, leido: true } : n));
+        
+        Promise.all(
+          unreadIds.map(id => 
+            supabase.from('notificaciones').update({ leido: true }).eq('id', id)
+          )
+        ).then(() => {
+          DeviceEventEmitter.emit('NOTIFICATIONS_READ');
+        }).catch(err => {
+          console.error('Error in batch update:', err);
+          // Emitimos de todas formas para forzar actualización de los badges
+          DeviceEventEmitter.emit('NOTIFICATIONS_READ');
+        });
+      }
     } catch (err) {
       console.error('Error fetching notifications:', err);
     } finally {
@@ -107,22 +167,66 @@ export default function NotificationsScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Notificacion }) => (
-    <TouchableOpacity 
-      style={[styles.notificationItem, !item.leido && styles.unreadItem]}
-      onPress={() => markAsRead(item.id)}
-    >
-      <View style={[styles.iconContainer, { backgroundColor: getIconColor(item.tipo) + '20' }]}>
-        <Ionicons name={getIcon(item.tipo)} size={24} color={getIconColor(item.tipo)} />
-      </View>
-      <View style={styles.content}>
-        <Text style={[styles.title, !item.leido && styles.unreadText]}>{item.titulo}</Text>
-        <Text style={styles.message}>{item.mensaje}</Text>
-        <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
-      </View>
-      {!item.leido && <View style={styles.unreadDot} />}
-    </TouchableOpacity>
-  );
+  const handleNotificationPress = async (item: Notificacion) => {
+    markAsRead(item.id);
+    
+    if (item.tipo === 'seguidor') {
+      let followerId = null;
+      const msg = item.mensaje || '';
+
+      if (msg.includes('||')) {
+        followerId = msg.split('||')[0];
+      } else if (msg) {
+        // Intentar extraer el nombre de mensajes generados por trigger (ej: "Juan ha empezado a seguirte")
+        const match = msg.match(/^(.*?)\s+ha empezado a seguirte/i) || 
+                      msg.match(/El usuario (.*?)\s+ha empezado/i);
+        const possibleName = match ? match[1].trim() : msg.split(' ')[0];
+
+        try {
+          const { data } = await supabase
+            .from('perfiles')
+            .select('id')
+            .or(`username.eq.${possibleName},nombre.eq.${possibleName}`)
+            .limit(1)
+            .single();
+
+          if (data) {
+            followerId = data.id;
+          }
+        } catch (err) {
+          console.error('No se pudo encontrar el usuario desde el mensaje:', err);
+        }
+      }
+
+      if (followerId) {
+        router.push({ pathname: '/user-profile', params: { userId: followerId } });
+      }
+    }
+  };
+
+  const renderItem = ({ item }: { item: Notificacion }) => {
+    let displayMessage = item.mensaje || '';
+    if (item.tipo === 'seguidor' && displayMessage.includes('||')) {
+      displayMessage = displayMessage.split('||')[1];
+    }
+
+    return (
+      <TouchableOpacity 
+        style={[styles.notificationItem, !item.leido && styles.unreadItem]}
+        onPress={() => handleNotificationPress(item)}
+      >
+        <View style={[styles.iconContainer, { backgroundColor: getIconColor(item.tipo) + '20' }]}>
+          <Ionicons name={getIcon(item.tipo)} size={24} color={getIconColor(item.tipo)} />
+        </View>
+        <View style={styles.content}>
+          <Text style={[styles.title, !item.leido && styles.unreadText]}>{item.titulo}</Text>
+          <Text style={styles.message}>{displayMessage}</Text>
+          <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
+        </View>
+        {!item.leido && <View style={styles.unreadDot} />}
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>

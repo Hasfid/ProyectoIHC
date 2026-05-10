@@ -25,21 +25,71 @@ import { followUser, unfollowUser, checkIsFollowing } from '../lib/follows';
 
 const { width } = Dimensions.get('window');
 
+/**
+ * Componente principal para visualizar el perfil de otro usuario.
+ * 
+ * Este componente es de solo lectura en cuanto a los datos del otro usuario,
+ * pero permite interactuar mediante acciones sociales (seguir/dejar de seguir)
+ * y navegación a la mensajería directa o al explorador de seguidores.
+ * También integra las pestañas de actividad (registros biológicos y posts).
+ */
 export default function UserProfileScreen() {
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
+  
+  // Asegurarse de que userId sea un string simple (en web a veces llega como array)
+  const actualUserId = Array.isArray(userId) ? userId[0] : userId;
+  
+  /** Información pública del perfil visitado */
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  /** Indica si el usuario actual sigue al usuario de este perfil */
   const [isFollowing, setIsFollowing] = useState(false);
   const [togglingFollow, setTogglingFollow] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  
+  /** Contadores de actividad y red social del usuario visitado */
   const [stats, setStats] = useState({ followers: 0, following: 0, records: 0 });
+  
+  /** Lista de registros biológicos (fotos) subidos por el usuario visitado */
+  const [userRecords, setUserRecords] = useState<any[]>([]);
+  
+  /** Lista de publicaciones creadas en la comunidad por el usuario visitado */
+  const [userPosts, setUserPosts] = useState<any[]>([]);
+  
+  /** Pestaña activa en la sección de contenido inferior */
+  const [activeTab, setActiveTab] = useState<'records' | 'community'>('records');
 
   useEffect(() => {
-    if (userId) loadProfile();
-  }, [userId]);
+    if (actualUserId) {
+      loadProfile();
 
-  /** Carga perfil, stats y estado de follow */
+      // Suscripción en tiempo real a los seguidores para actualizar contadores instantáneamente
+      const channel = supabase
+        .channel(`user-profile-stats-${actualUserId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'seguidores' }, () => {
+          // Recargar stats de seguidores silenciosamente
+          Promise.all([
+            supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguido_id', actualUserId),
+            supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguidor_id', actualUserId),
+          ]).then(([followersRes, followingRes]) => {
+            setStats(prev => ({
+              ...prev,
+              followers: followersRes.count || 0,
+              following: followingRes.count || 0,
+            }));
+          });
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [actualUserId]);
+
+  /** Carga perfil, stats, registros, publicaciones y estado de follow */
   const loadProfile = async () => {
     setLoading(true);
     try {
@@ -51,26 +101,37 @@ export default function UserProfileScreen() {
       const { data, error } = await supabase
         .from('perfiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', actualUserId)
         .single();
 
       if (data && !error) setProfile(data);
 
+      // Registros y Publicaciones
+      const [recordsRes, postsRes] = await Promise.all([
+        supabase.from('registros').select('*').eq('usuario_id', actualUserId).order('created_at', { ascending: false }),
+        supabase.from('publicaciones').select('*').eq('usuario_id', actualUserId).order('created_at', { ascending: false })
+      ]);
+
+      const recordsData = recordsRes.data || [];
+      const postsData = postsRes.data || [];
+      setUserRecords(recordsData);
+      setUserPosts(postsData);
+
       // Stats
       const [followersRes, followingRes] = await Promise.all([
-        supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguido_id', userId),
-        supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguidor_id', userId),
+        supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguido_id', actualUserId),
+        supabase.from('seguidores').select('*', { count: 'exact', head: true }).eq('seguidor_id', actualUserId),
       ]);
 
       setStats({
         followers: followersRes.count || 0,
         following: followingRes.count || 0,
-        records: 0,
+        records: recordsData.length,
       });
 
       // ¿Lo sigo?
-      if (myId && userId) {
-        const following = await checkIsFollowing(myId, userId);
+      if (myId && actualUserId) {
+        const following = await checkIsFollowing(myId, actualUserId);
         setIsFollowing(following);
       }
     } catch (err) {
@@ -82,16 +143,16 @@ export default function UserProfileScreen() {
 
   /** Alterna follow/unfollow con actualización optimista del contador */
   const toggleFollow = async () => {
-    if (!currentUserId || !userId || togglingFollow) return;
+    if (!currentUserId || !actualUserId || togglingFollow) return;
 
     setTogglingFollow(true);
     try {
       if (isFollowing) {
-        await unfollowUser(currentUserId, userId);
+        await unfollowUser(currentUserId, actualUserId);
         setIsFollowing(false);
         setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
       } else {
-        await followUser(currentUserId, userId);
+        await followUser(currentUserId, actualUserId);
         setIsFollowing(true);
         setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
       }
@@ -104,7 +165,7 @@ export default function UserProfileScreen() {
 
   /** Navega al hub social del usuario con la tab indicada */
   const navigateToFollowers = (type: 'followers' | 'following') => {
-    router.push({ pathname: '/social', params: { userId: userId!, tab: type } });
+    router.push({ pathname: '/social', params: { userId: actualUserId!, tab: type } });
   };
 
   if (loading) {
@@ -126,13 +187,16 @@ export default function UserProfileScreen() {
 
   const isDefaultUnsplash = profile.foto_perfil?.includes('images.unsplash.com');
   const hasPhoto = profile.foto_perfil && !isDefaultUnsplash;
-  const isOwnProfile = currentUserId === userId;
+  const isOwnProfile = currentUserId === actualUserId;
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity 
+          onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} 
+          style={styles.backButton}
+        >
           <Ionicons name="arrow-back" size={24} color="#111" />
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>{profile.username || profile.nombre}</Text>
@@ -192,11 +256,68 @@ export default function UserProfileScreen() {
             
             <TouchableOpacity 
               style={[styles.actionButton, styles.messageButton]}
-              onPress={() => router.push({ pathname: '/messages', params: { userId } })}
+              onPress={() => router.push({ pathname: '/messages', params: { userId: actualUserId } })}
             >
               <Text style={styles.messageButtonText}>Mensaje</Text>
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* Tabs */}
+        <View style={styles.tabsContainer}>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'records' && styles.activeTab]} 
+            onPress={() => setActiveTab('records')}
+          >
+            <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? '#111' : '#888'} />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'community' && styles.activeTab]} 
+            onPress={() => setActiveTab('community')}
+          >
+            <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? '#111' : '#888'} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Tab Content */}
+        {activeTab === 'records' && (
+          userRecords.length === 0 ? (
+            <View style={{ alignItems: 'center', padding: 40 }}>
+              <Ionicons name="leaf-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>Sin registros públicos</Text>
+            </View>
+          ) : (
+            <View style={styles.gridContainer}>
+              {userRecords.map((record) => (
+                <View key={record.id} style={styles.gridItem}>
+                  <Image source={{ uri: record.media_url || 'https://via.placeholder.com/150' }} style={styles.gridImage} />
+                </View>
+              ))}
+            </View>
+          )
+        )}
+
+        {activeTab === 'community' && (
+          userPosts.length === 0 ? (
+            <View style={{ alignItems: 'center', padding: 40 }}>
+              <Ionicons name="megaphone-outline" size={48} color="#ccc" />
+              <Text style={styles.emptyText}>Sin publicaciones en la comunidad</Text>
+            </View>
+          ) : (
+            <View style={styles.postsListContainer}>
+              {userPosts.map((post) => (
+                <View key={post.id} style={styles.postCard}>
+                  <View style={styles.postCardHeader}>
+                    <Text style={styles.postCardTitle}>{post.titulo}</Text>
+                  </View>
+                  <Text style={styles.postCardDesc}>{post.descripcion}</Text>
+                  <Text style={styles.postCardDate}>
+                    {new Date(post.created_at).toLocaleDateString('es-VE')}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )
         )}
 
         <View style={{ height: 40 }} />
@@ -325,5 +446,70 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#111',
+  },
+  tabsContainer: { 
+    flexDirection: 'row', 
+    borderTopWidth: 1, 
+    borderTopColor: '#eee', 
+    marginTop: 10 
+  },
+  tab: { 
+    flex: 1, 
+    paddingVertical: 15, 
+    alignItems: 'center' 
+  },
+  activeTab: { 
+    borderBottomWidth: 2, 
+    borderBottomColor: '#111' 
+  },
+  gridContainer: { 
+    flexDirection: 'row', 
+    flexWrap: 'wrap' 
+  },
+  gridItem: { 
+    width: width / 3, 
+    height: width / 3, 
+    padding: 1 
+  },
+  gridImage: { 
+    width: '100%', 
+    height: '100%',
+    backgroundColor: '#f0f0f0'
+  },
+  emptyText: { 
+    color: '#999', 
+    marginTop: 8 
+  },
+  postsListContainer: { 
+    paddingHorizontal: 16, 
+    paddingTop: 16 
+  },
+  postCard: { 
+    backgroundColor: '#f9f9f9', 
+    padding: 16, 
+    borderRadius: 12, 
+    marginBottom: 12, 
+    borderWidth: 1, 
+    borderColor: '#eee' 
+  },
+  postCardHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginBottom: 8 
+  },
+  postCardTitle: { 
+    fontSize: 16, 
+    fontWeight: 'bold', 
+    color: '#111' 
+  },
+  postCardDesc: { 
+    fontSize: 14, 
+    color: '#333', 
+    lineHeight: 20 
+  },
+  postCardDate: { 
+    fontSize: 12, 
+    color: '#888', 
+    marginTop: 8 
   },
 });

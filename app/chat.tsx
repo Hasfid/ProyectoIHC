@@ -33,6 +33,7 @@ type Conversation = {
   username: string;
   nombre: string;
   foto_perfil: string | null;
+  unread_count: number;
 };
 
 export default function ChatListScreen() {
@@ -45,6 +46,23 @@ export default function ChatListScreen() {
   useEffect(() => {
     fetchSessionAndChats();
   }, []);
+
+  // Suscripción Realtime para la bandeja de entrada
+  useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase
+      .channel('chat-list')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'mensajes' }, (payload) => {
+        // En DELETE, payload.old solo trae ID, así que forzamos la recarga de seguridad
+        const msg = payload.eventType === 'DELETE' ? payload.old : payload.new;
+        if (payload.eventType === 'DELETE' || (msg && (msg.remitente_id === currentUserId || msg.destinatario_id === currentUserId))) {
+          fetchConversations(currentUserId);
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -84,11 +102,14 @@ export default function ChatListScreen() {
         return;
       }
 
-      // 2. Obtener chats ocultos de AsyncStorage
+      // 2. Obtener chats ocultos y timestamps de lectura desde AsyncStorage
       const hiddenChatsRaw = await AsyncStorage.getItem(`hidden_chats_${myId}`);
       const hiddenChats = hiddenChatsRaw ? JSON.parse(hiddenChatsRaw) : {};
+      
+      const lastReadRaw = await AsyncStorage.getItem(`last_read_${myId}`);
+      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
 
-      // 3. Agrupar por el "otro usuario" y quedarnos con el último mensaje
+      // 3. Agrupar por el "otro usuario" y calcular no leídos
       const convsMap = new Map<string, any>();
       
       messages.forEach(msg => {
@@ -105,7 +126,18 @@ export default function ChatListScreen() {
             other_user_id: otherId,
             last_message: msg.contenido,
             last_message_time: msg.created_at,
+            unread_count: 0
           });
+        }
+
+        const conv = convsMap.get(otherId);
+        
+        // Calcular no leídos (solo mensajes que RECIBÍ, no los que envié)
+        if (msg.remitente_id === otherId) {
+          const lastReadTime = lastRead[otherId];
+          if (!lastReadTime || new Date(msg.created_at) > new Date(lastReadTime)) {
+            conv.unread_count += 1;
+          }
         }
       });
 
@@ -201,9 +233,16 @@ export default function ChatListScreen() {
           <Text style={styles.username}>{item.username || item.nombre}</Text>
           <Text style={styles.time}>{getTimeAgo(item.last_message_time)}</Text>
         </View>
-        <Text style={styles.lastMessage} numberOfLines={1}>
-          {item.last_message}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={[styles.lastMessage, { flex: 1, fontWeight: item.unread_count > 0 ? 'bold' : 'normal', color: item.unread_count > 0 ? '#111' : '#666' }]} numberOfLines={1}>
+            {item.last_message}
+          </Text>
+          {item.unread_count > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadText}>{item.unread_count}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -225,9 +264,18 @@ export default function ChatListScreen() {
     <View style={styles.container}>
       <Stack.Screen
         options={{
-          headerTitle: 'Mensajería',
+          headerShown: true,
+          headerTitle: 'Bandeja de entrada',
+          headerLeft: () => (
+            <TouchableOpacity 
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} 
+              style={{ marginLeft: 5 }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#004d40" />
+            </TouchableOpacity>
+          ),
           headerRight: () => (
-            <TouchableOpacity onPress={() => router.push({ pathname: '/social', params: { tab: 'following' } })}>
+            <TouchableOpacity onPress={() => router.push('/new-chat')}>
               <Ionicons name="create-outline" size={24} color="#004d40" style={{ marginRight: 15 }} />
             </TouchableOpacity>
           ),
@@ -245,7 +293,7 @@ export default function ChatListScreen() {
           <Text style={styles.emptySubtitle}>Inicia un chat con alguien que sigas.</Text>
           <TouchableOpacity
             style={styles.startButton}
-            onPress={() => router.push({ pathname: '/social', params: { tab: 'following' } })}
+            onPress={() => router.push('/new-chat')}
           >
             <Text style={styles.startButtonText}>Empezar a chatear</Text>
           </TouchableOpacity>
@@ -344,5 +392,20 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  unreadBadge: {
+    backgroundColor: '#004d40',
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    marginLeft: 8,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
 });

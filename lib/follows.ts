@@ -33,6 +33,23 @@ export const followUser = async (followerId: string, followedId: string): Promis
     .from('seguidores')
     .insert({ seguidor_id: followerId, seguido_id: followedId });
   if (error) throw error;
+
+  // Obtener perfil del seguidor para la notificación
+  const { data: profile } = await supabase
+    .from('perfiles')
+    .select('username, nombre')
+    .eq('id', followerId)
+    .single();
+
+  if (profile) {
+    const displayName = profile.username || profile.nombre || 'Un usuario';
+    await supabase.from('notificaciones').insert({
+      usuario_id: followedId,
+      titulo: 'Nuevo seguidor',
+      mensaje: `${followerId}||${displayName} ha empezado a seguirte.`,
+      tipo: 'seguidor'
+    });
+  }
 };
 
 /** Elimina la relación de follow entre dos usuarios. */
@@ -43,6 +60,14 @@ export const unfollowUser = async (followerId: string, followedId: string): Prom
     .eq('seguidor_id', followerId)
     .eq('seguido_id', followedId);
   if (error) throw error;
+
+  // Eliminar la notificación pendiente para que el icono de notificaciones se actualice
+  await supabase
+    .from('notificaciones')
+    .delete()
+    .eq('usuario_id', followedId)
+    .eq('tipo', 'seguidor')
+    .like('mensaje', `${followerId}||%`);
 };
 
 /** Verifica si `followerId` sigue a `followedId`. */
@@ -52,7 +77,7 @@ export const checkIsFollowing = async (followerId: string, followedId: string): 
     .select('id')
     .eq('seguidor_id', followerId)
     .eq('seguido_id', followedId)
-    .single();
+    .maybeSingle();
   return !!data;
 };
 
@@ -124,12 +149,41 @@ export const searchUsers = async (query: string, currentUserId: string): Promise
 
 /** Descubre usuarios sugeridos via RPC `descubrir_usuarios` (amigos de amigos). */
 export const discoverUsers = async (currentUserId: string): Promise<UserProfile[]> => {
-  const { data, error } = await supabase.rpc('descubrir_usuarios', {
-    usuario_id: currentUserId,
-    limite: 30,
-  });
-  if (error) throw error;
-  return (data || []) as UserProfile[];
+  let users: UserProfile[] = [];
+  try {
+    const { data, error } = await supabase.rpc('descubrir_usuarios', {
+      usuario_id: currentUserId,
+      limite: 30,
+    });
+    if (!error && data && data.length > 0) {
+      users = data as UserProfile[];
+    }
+  } catch (err) {
+    console.error('Error en RPC descubrir_usuarios:', err);
+  }
+
+  // Fallback: Si el usuario no tiene conexiones (grafo vacío) o la RPC falla
+  if (users.length === 0) {
+    try {
+      const followingIds = await getFollowingIds(currentUserId);
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('perfiles')
+        .select('id, username, nombre, foto_perfil, descripcion')
+        .neq('id', currentUserId)
+        .limit(50);
+
+      if (!fallbackError && fallbackData) {
+        users = (fallbackData as UserProfile[])
+          .filter(p => !followingIds.has(p.id))
+          .slice(0, 30);
+      }
+    } catch (err) {
+      console.error('Error en fallback de discoverUsers:', err);
+    }
+  }
+
+  return users;
 };
 
 /** Obtiene el Set de IDs de usuarios seguidos (para verificar follow en lotes). */

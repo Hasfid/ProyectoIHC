@@ -18,45 +18,80 @@ export default function RegisterScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({ email: '', username: '', password: '', confirmPassword: '', general: '' });
 
   /** Valida campos, verifica username único y registra en Supabase Auth */
   const handleRegister = async () => {
-    if (!email || !password || !username) {
-      Alert.alert('Error', 'Por favor llena los campos requeridos (Correo, Usuario, Contraseña)');
-      return;
+    let newErrors = { email: '', username: '', password: '', confirmPassword: '', general: '' };
+    let hasError = false;
+
+    // 1. Validaciones básicas de campos vacíos
+    if (!email.trim() || !password || !confirmPassword || !username.trim()) {
+      newErrors.general = 'Por favor llena todos los campos requeridos.';
+      hasError = true;
     }
 
-    // Validación de formato de correo
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      Alert.alert('Correo Inválido', 'Por favor ingresa una dirección de correo electrónico válida.');
-      return;
+    if (password && confirmPassword && password !== confirmPassword) {
+      newErrors.confirmPassword = 'Las contraseñas no coinciden.';
+      hasError = true;
     }
 
-    // Validación de username (sin @ ni caracteres especiales raros)
-    const usernameRegex = /^[a-zA-Z0-9_]+$/;
-    if (!usernameRegex.test(username)) {
-      Alert.alert('Usuario Inválido', 'El nombre de usuario solo puede contener letras, números y guiones bajos (_). No puede contener espacios ni @.');
-      return;
+    // 2. Validación robusta de formato y longitud de correo
+    if (email.trim().length > 60) {
+      newErrors.email = 'El correo es demasiado largo (máx 60 caracteres).';
+      hasError = true;
+    } else if (email.trim().length > 0) {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(email.trim())) {
+        newErrors.email = 'Por favor ingresa un correo electrónico válido.';
+        hasError = true;
+      }
     }
 
-    if (password.length < 8) {
-      Alert.alert('Contraseña Débil', 'La contraseña debe tener al menos 8 caracteres.');
-      return;
+    // 3. Validación de username
+    if (username.trim().length > 15) {
+      newErrors.username = 'El nombre de usuario no puede tener más de 15 caracteres.';
+      hasError = true;
+    } else if (username.trim().length > 0) {
+      const usernameRegex = /^[a-zA-Z0-9_]+$/;
+      if (!usernameRegex.test(username.trim())) {
+        newErrors.username = 'Solo puede contener letras, números y guiones bajos (_).';
+        hasError = true;
+      }
     }
+
+    // 4. Validación de longitud de contraseña
+    if (password.length > 0 && password.length < 8) {
+      newErrors.password = 'La contraseña debe tener al menos 8 caracteres.';
+      hasError = true;
+    } else if (password.length > 30) {
+      newErrors.password = 'La contraseña es demasiado larga (máx 30 caracteres).';
+      hasError = true;
+    }
+
+    setErrors(newErrors);
+
+    if (hasError) return;
 
     setLoading(true);
 
     try {
-      // 1. Verificar si el nombre de usuario ya existe consultando la tabla pública
-      const { data: existingUser } = await supabase
+      if (Platform.OS === 'web') console.log('[Register] Iniciando proceso para:', email.trim());
+
+      // 5. Verificar si el nombre de usuario ya existe
+      const { data: existingUser, error: checkError } = await supabase
         .from('perfiles')
         .select('id')
         .eq('username', username.toLowerCase().trim())
         .single();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116 es "no rows found", lo cual es bueno
+        if (Platform.OS === 'web') console.error('[Register] Error al verificar username:', checkError);
+      }
 
       if (existingUser) {
         setLoading(false);
@@ -64,32 +99,34 @@ export default function RegisterScreen() {
         return;
       }
 
-      // 2. Registrar usuario en Supabase Auth
-      // Si el correo ya existe, Supabase retornará un error que mostraremos.
+      // 6. Registrar usuario en Supabase Auth
       const { data, error } = await supabase.auth.signUp({
         email: email.toLowerCase().trim(),
         password,
         options: {
+          // Importante para la web: URL de retorno después de confirmar mail
+          emailRedirectTo: Platform.OS === 'web' ? window.location.origin : undefined,
           data: {
             username: username.toLowerCase().trim(),
-            nombre: username, // Lo usamos por ahora como nombre por defecto
+            nombre: username.trim(),
           }
         }
       });
 
       if (error) {
+        if (Platform.OS === 'web') console.error('[Register] Error de Supabase:', error);
         Alert.alert('Error al registrar', error.message);
       } else if (data.session) {
-        // La sesión se inició automáticamente (Confirm Email está apagado en Supabase)
-        // RootLayout detectará el cambio de estado y redirigirá automáticamente a /(tabs)
+        if (Platform.OS === 'web') console.log('[Register] Registro exitoso, sesión iniciada.');
       } else {
-        // Confirm Email está encendido en Supabase, se requiere confirmación manual
+        if (Platform.OS === 'web') console.log('[Register] Registro exitoso, esperando confirmación de email.');
         Alert.alert(
           'Revisa tu correo', 
           'Hemos enviado un enlace de confirmación. Debes confirmar tu correo antes de poder iniciar sesión.'
         );
       }
     } catch (err) {
+      if (Platform.OS === 'web') console.error('[Register] Error inesperado:', err);
       Alert.alert('Error', 'Ocurrió un error inesperado al conectar con el servidor.');
     } finally {
       setLoading(false);
@@ -109,38 +146,63 @@ export default function RegisterScreen() {
         <View style={styles.bottomSection}>
           <Text style={styles.title}>Crear Cuenta</Text>
 
+          {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
+
           <Text style={styles.label}>Correo Electrónico</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, errors.email ? styles.inputError : null]}
             placeholder="tu@correo.com"
             autoCapitalize="none"
             keyboardType="email-address"
+            maxLength={60}
             value={email}
-            onChangeText={setEmail}
+            onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
+            onSubmitEditing={handleRegister}
           />
+          {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
           <Text style={styles.label}>Nombre de Usuario</Text>
           <TextInput
-            style={styles.input}
+            style={[styles.input, errors.username ? styles.inputError : null]}
             placeholder="ej: carlos_botanico"
             autoCapitalize="none"
+            maxLength={15}
             value={username}
-            onChangeText={setUsername}
+            onChangeText={(text) => { setUsername(text); setErrors({...errors, username: '', general: ''}); }}
+            onSubmitEditing={handleRegister}
           />
+          {errors.username ? <Text style={styles.errorText}>{errors.username}</Text> : null}
 
           <Text style={styles.label}>Contraseña</Text>
-          <View style={styles.passwordContainer}>
+          <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
             <TextInput
               style={styles.passwordInput}
               placeholder="Mínimo 8 caracteres"
               secureTextEntry={!showPassword}
+              maxLength={30}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => { setPassword(text); setErrors({...errors, password: '', general: ''}); }}
+              onSubmitEditing={handleRegister}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
               <Ionicons name={showPassword ? "eye-off" : "eye"} size={24} color="#888" />
             </TouchableOpacity>
           </View>
+          {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
+          <Text style={styles.label}>Confirmar Contraseña</Text>
+          <View style={[styles.passwordContainer, errors.confirmPassword ? styles.inputError : null]}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Repite tu contraseña"
+              secureTextEntry={!showPassword}
+              maxLength={30}
+              value={confirmPassword}
+              onChangeText={(text) => { setConfirmPassword(text); setErrors({...errors, confirmPassword: '', general: ''}); }}
+              onSubmitEditing={handleRegister}
+            />
+          </View>
+          {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
 
           <TouchableOpacity 
             style={[styles.button, loading && styles.buttonDisabled]} 
@@ -211,6 +273,24 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     fontSize: 16,
     backgroundColor: '#fafafa',
+  },
+  inputError: {
+    borderColor: '#d32f2f',
+    backgroundColor: '#fff5f5',
+  },
+  errorText: {
+    color: '#d32f2f',
+    fontSize: 12,
+    marginTop: -15,
+    marginBottom: 15,
+    marginLeft: 4,
+  },
+  errorTextGeneral: {
+    color: '#d32f2f',
+    fontSize: 14,
+    marginBottom: 15,
+    textAlign: 'center',
+    fontWeight: 'bold',
   },
   passwordContainer: {
     flexDirection: 'row',

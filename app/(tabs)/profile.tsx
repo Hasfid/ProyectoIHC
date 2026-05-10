@@ -27,11 +27,13 @@ import {
   Modal,
   TextInput,
   Alert,
+  DeviceEventEmitter,
 } from 'react-native';
 import { supabase } from '../../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
 import { uploadMediaToSupabase } from '../../lib/uploadMedia';
-import { getDrafts, deleteDraft, syncDrafts, DraftRecord } from '../../lib/drafts';
+import { getDrafts, deleteDraft, syncDrafts, DraftRecord, DRAFTS_UPDATED_EVENT } from '../../lib/drafts';
+import { i18n, changeLanguage } from '../../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -55,6 +57,55 @@ export default function ProfileScreen() {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const [currentLocale, setCurrentLocale] = useState(i18n.locale);
+
+  useEffect(() => {
+    let channel: any;
+    const init = async () => {
+      const { data: { session: currentSession } } = await supabase.auth.getSession();
+      if (!currentSession) return;
+      const uid = currentSession.user.id;
+
+      const fetchUnread = async () => {
+        const { data } = await supabase
+          .from('notificaciones')
+          .select('id, tipo, mensaje')
+          .eq('usuario_id', uid)
+          .or('leido.eq.false,leido.is.null');
+        
+        if (data) {
+          const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
+          setUnreadCount(valid.length);
+        }
+      };
+      
+      fetchUnread();
+
+      channel = supabase
+        .channel(`unread-notifs-profile-${uid}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notificaciones', filter: `usuario_id=eq.${uid}` }, () => {
+          fetchUnread();
+        })
+        .subscribe();
+        
+      const eventListener = DeviceEventEmitter.addListener('NOTIFICATIONS_READ', () => {
+        fetchUnread();
+      });
+
+      return () => {
+        if (channel) supabase.removeChannel(channel);
+        eventListener.remove();
+      };
+    };
+    
+    const cleanup = init();
+
+    return () => {
+      cleanup.then(clean => clean && clean());
+    };
+  }, []);
 
   // Estados de edición
   const [isEditing, setIsEditing] = useState(false);
@@ -117,9 +168,17 @@ export default function ProfileScreen() {
     }
   }, [selectedRecord]);
 
-
   useEffect(() => {
     fetchSessionAndProfile();
+    
+    // Suscribirse a cambios en borradores (sync automático, borrado, etc)
+    const draftSub = DeviceEventEmitter.addListener(DRAFTS_UPDATED_EVENT, () => {
+      loadOfflineDrafts();
+      if (session?.user?.id) {
+        fetchStats(session.user.id);
+        fetchUserRecords(session.user.id);
+      }
+    });
     
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
@@ -136,8 +195,26 @@ export default function ProfileScreen() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      draftSub.remove();
+    };
   }, []);
+
+  // Suscripción en tiempo real a los seguidores
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const channel = supabase
+      .channel('profile-stats-channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'seguidores' }, () => {
+        fetchStats(session.user.id);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.user?.id]);
 
   // Refrescar registros al volver a la pantalla
   useFocusEffect(
@@ -169,7 +246,7 @@ export default function ProfileScreen() {
           style: 'destructive',
           onPress: async () => {
             await deleteDraft(draftId);
-            await loadOfflineDrafts();
+            // Ya no hace falta loadOfflineDrafts() aquí porque el evento lo hará
           },
         },
       ]
@@ -528,16 +605,25 @@ export default function ProfileScreen() {
   const isDefaultUnsplash = profile.foto_perfil?.includes('images.unsplash.com');
   const hasPhoto = profile.foto_perfil && !isDefaultUnsplash;
 
+
+
   return (
     <View style={styles.container}>
       <View style={styles.customHeader}>
-        <Text style={styles.customHeaderTitle}>Perfil</Text>
+        <Text style={styles.customHeaderTitle}>{i18n.t('profile.title')}</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/notifications')}>
-            <Ionicons name="notifications-outline" size={28} color="#111" />
+            <View>
+              <Ionicons name="notifications-outline" size={28} color="#111" />
+              {unreadCount > 0 && (
+                <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
+                  <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                </View>
+              )}
+            </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={28} color="#111" />
+          <TouchableOpacity style={styles.menuButton} onPress={() => setSettingsVisible(true)}>
+            <Ionicons name="menu-outline" size={32} color="#111" />
           </TouchableOpacity>
         </View>
       </View>
@@ -555,15 +641,15 @@ export default function ProfileScreen() {
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>{stats.records}</Text>
-              <Text style={styles.statLabel}>Registros</Text>
+              <Text style={styles.statLabel}>{i18n.t('profile.records')}</Text>
             </View>
             <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'followers' } })}>
               <Text style={styles.statNumber}>{stats.followers}</Text>
-              <Text style={styles.statLabel}>Seguidores</Text>
+              <Text style={styles.statLabel}>{i18n.t('profile.followers')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'following' } })}>
               <Text style={styles.statNumber}>{stats.following}</Text>
-              <Text style={styles.statLabel}>Seguidos</Text>
+              <Text style={styles.statLabel}>{i18n.t('profile.following')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -575,10 +661,10 @@ export default function ProfileScreen() {
 
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
-            <Text style={styles.editButtonText}>Editar perfil</Text>
+            <Text style={styles.editButtonText}>{i18n.t('profile.editProfile')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.editButton} onPress={() => router.push({ pathname: '/social', params: { tab: 'discover' } })}>
-            <Text style={styles.editButtonText}>Descubrir personas</Text>
+            <Text style={styles.editButtonText}>{i18n.t('social.discover')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -588,21 +674,19 @@ export default function ProfileScreen() {
             onPress={() => setActiveTab('records')}
           >
             <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? '#111' : '#888'} />
+            <Text style={[styles.tabText, activeTab === 'records' && styles.activeTabText]}>{i18n.t('profile.tabRecords')}</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'community' && styles.activeTab]} 
             onPress={() => setActiveTab('community')}
           >
             <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? '#111' : '#888'} />
+            <Text style={[styles.tabText, activeTab === 'community' && styles.activeTabText]}>{i18n.t('profile.tabCommunity')}</Text>
           </TouchableOpacity>
         </View>
 
         {activeTab === 'records' && (
           <>
-            {/* Título + Sub-pestañas */}
-            <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
-              <Text style={styles.sectionTitle}>Mis Registros</Text>
-            </View>
             <View style={styles.subTabRow}>
               <TouchableOpacity
                 style={[styles.subTab, recordSubTab === 'published' && styles.subTabActive]}
@@ -610,7 +694,7 @@ export default function ProfileScreen() {
               >
                 <Ionicons name="cloud-done-outline" size={16} color={recordSubTab === 'published' ? '#004d40' : '#888'} />
                 <Text style={[styles.subTabText, recordSubTab === 'published' && styles.subTabTextActive]}>
-                  Publicados ({stats.records})
+                  {i18n.t('profile.published')} ({stats.records})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
@@ -619,7 +703,7 @@ export default function ProfileScreen() {
               >
                 <Ionicons name="time-outline" size={16} color={recordSubTab === 'pending' ? '#e65100' : '#888'} />
                 <Text style={[styles.subTabText, recordSubTab === 'pending' && styles.subTabTextActivePending]}>
-                  Pendientes ({offlineDrafts.length})
+                  {i18n.t('profile.pending')} ({offlineDrafts.length})
                 </Text>
               </TouchableOpacity>
             </View>
@@ -632,7 +716,7 @@ export default function ProfileScreen() {
                     <Ionicons name="search" size={20} color="#999" />
                     <TextInput
                       style={styles.searchInput}
-                      placeholder="Buscar en mis registros..."
+                      placeholder={i18n.t('profile.searchRecords')}
                       placeholderTextColor="#999"
                       value={searchQuery}
                       onChangeText={setSearchQuery}
@@ -646,13 +730,13 @@ export default function ProfileScreen() {
                 </View>
 
                 <View style={styles.filterRow}>
-                  {['Todos', 'Animales', 'Plantas'].map((f: any) => (
+                  {[{ key: 'Todos', label: i18n.t('common.all') }, { key: 'Animales', label: i18n.t('common.animals') }, { key: 'Plantas', label: i18n.t('common.plants') }].map((f: any) => (
                     <TouchableOpacity 
-                      key={f} 
-                      onPress={() => setFilter(f)}
-                      style={[styles.filterChip, filter === f && styles.filterChipActive]}
+                      key={f.key} 
+                      onPress={() => setFilter(f.key)}
+                      style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
                     >
-                      <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
+                      <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
@@ -660,7 +744,7 @@ export default function ProfileScreen() {
                 {filteredRecords.length === 0 ? (
                   <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 40 }]}>
                     <Ionicons name="leaf-outline" size={48} color="#ccc" />
-                    <Text style={{ color: '#999', marginTop: 8 }}>Sin registros en esta categoría</Text>
+                    <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noRecords')}</Text>
                   </View>
                 ) : (
                   <View style={styles.gridContainer}>
@@ -690,7 +774,7 @@ export default function ProfileScreen() {
                 {offlineDrafts.length === 0 ? (
                   <View style={{ alignItems: 'center', padding: 40 }}>
                     <Ionicons name="checkmark-circle-outline" size={48} color="#ccc" />
-                    <Text style={{ color: '#999', marginTop: 8 }}>No hay registros pendientes</Text>
+                    <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noPending')}</Text>
                   </View>
                 ) : (
                   offlineDrafts.map((draft) => (
@@ -753,7 +837,7 @@ export default function ProfileScreen() {
           userPosts.length === 0 ? (
             <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
               <Ionicons name="megaphone-outline" size={48} color="#ccc" />
-              <Text style={{ color: '#999', marginTop: 8 }}>Sin publicaciones en la comunidad</Text>
+              <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noPosts')}</Text>
             </View>
           ) : (
             <View style={styles.postsListContainer}>
@@ -935,6 +1019,42 @@ export default function ProfileScreen() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* MODAL DE CONFIGURACIÓN / IDIOMA */}
+      <Modal visible={settingsVisible} transparent animationType="fade" onRequestClose={() => setSettingsVisible(false)}>
+        <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setSettingsVisible(false)}>
+          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
+            <View style={{ width: 40, height: 4, backgroundColor: '#ccc', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 20 }}>{i18n.t('profile.settings')}</Text>
+            
+            <TouchableOpacity 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' }} 
+              onPress={async () => {
+                const newLang = currentLocale === 'es' ? 'en' : 'es';
+                await changeLanguage(newLang);
+                setCurrentLocale(newLang);
+              }}
+            >
+              <Ionicons name="language-outline" size={24} color="#111" style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16 }}>
+                {currentLocale === 'es' ? i18n.t('profile.changeToEn') : i18n.t('profile.changeToEs')}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15 }} 
+              onPress={() => {
+                setSettingsVisible(false);
+                handleLogout();
+              }}
+            >
+              <Ionicons name="log-out-outline" size={24} color="#d32f2f" style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16, color: '#d32f2f' }}>{i18n.t('profile.logout')}</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
     </View>
   );
 }
@@ -974,8 +1094,10 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1, fontSize: 14, color: '#111',
   },
-  tab: { flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'transparent' },
+  tab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'transparent', flexDirection: 'row', gap: 6 },
   activeTab: { borderBottomColor: '#111' },
+  tabText: { fontSize: 13, fontWeight: '600', color: '#888' },
+  activeTabText: { color: '#111' },
   gridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
   gridItem: {
     width: (width - 4) / 3,

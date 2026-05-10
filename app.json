@@ -52,7 +52,8 @@
           "cameraPermission": "Necesitamos acceso a la cámara para identificar la biodiversidad."
         }
       ],
-      "react-native-fast-tflite"
+      "react-native-fast-tflite",
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

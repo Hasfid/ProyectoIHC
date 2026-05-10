@@ -18,7 +18,10 @@ import { supabase } from './supabase';
 import { uploadMediaToSupabase } from './uploadMedia';
 import { identifySpecies } from './identifySpecies';
 import * as FileSystem from 'expo-file-system/legacy';
-import { Platform } from 'react-native';
+import { Platform, DeviceEventEmitter } from 'react-native';
+
+/** Evento emitido cuando cambia la lista de borradores (creación, borrado, sync) */
+export const DRAFTS_UPDATED_EVENT = 'ecos_drafts_updated';
 
 // ── Constantes ───────────────────────────────────────────────────────────────
 
@@ -67,6 +70,7 @@ export const saveDraft = async (
     const id = Date.now().toString(36) + Math.random().toString(36).substring(2, 6);
     const newDraft: DraftRecord = { ...draft, id, created_at: new Date().toISOString() };
     await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify([newDraft, ...existing]));
+    DeviceEventEmitter.emit(DRAFTS_UPDATED_EVENT);
     return id;
   } catch (error) {
     console.error('Error saving draft:', error);
@@ -104,6 +108,7 @@ export const deleteDraft = async (id: string): Promise<void> => {
   try {
     const drafts = await getDrafts();
     await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(drafts.filter(d => d.id !== id)));
+    DeviceEventEmitter.emit(DRAFTS_UPDATED_EVENT);
   } catch (error) {
     console.error('Error deleting draft:', error);
   }
@@ -115,6 +120,7 @@ const updateDraft = async (id: string, updates: Partial<DraftRecord>): Promise<v
     const drafts = await getDrafts();
     const updated = drafts.map(d => (d.id === id ? { ...d, ...updates } : d));
     await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(updated));
+    DeviceEventEmitter.emit(DRAFTS_UPDATED_EVENT);
   } catch (error) {
     console.error('Error updating draft:', error);
   }

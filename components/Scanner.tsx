@@ -13,7 +13,7 @@
  * @module components/Scanner
  */
 
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, Platform, Animated,
@@ -24,7 +24,8 @@ import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
-import { saveDraft, getPendingCount } from '../lib/drafts';
+import { saveDraft, getPendingCount, DRAFTS_UPDATED_EVENT } from '../lib/drafts';
+import { DeviceEventEmitter } from 'react-native';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -57,6 +58,12 @@ export default function Scanner() {
     const counts = await getPendingCount();
     setPendingCount(counts.ai + counts.upload);
   };
+
+  useEffect(() => {
+    refreshPendingCount();
+    const sub = DeviceEventEmitter.addListener(DRAFTS_UPDATED_EVENT, refreshPendingCount);
+    return () => sub.remove();
+  }, []);
 
   /** Muestra animación de confirmación tras guardar un borrador */
   const showSavedFeedback = () => {

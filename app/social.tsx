@@ -33,6 +33,7 @@ import {
   unfollowUser,
   getFollowingIds,
 } from '../lib/follows';
+import { i18n } from '../lib/i18n';
 
 /** Perfil público simplificado para las listas sociales */
 type UserProfile = {
@@ -51,9 +52,9 @@ export default function SocialScreen() {
 
   const [index, setIndex] = useState(0);
   const [routes] = useState([
-    { key: 'followers', title: 'Seguidores' },
-    { key: 'following', title: 'Seguidos' },
-    { key: 'discover', title: 'Descubrir' },
+    { key: 'followers', title: i18n.t('social.followers') },
+    { key: 'following', title: i18n.t('social.following') },
+    { key: 'discover', title: i18n.t('social.discover') },
   ]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -187,7 +188,7 @@ export default function SocialScreen() {
             onPress={() => toggleFollow(item.id)}
           >
             <Text style={[styles.followText, isFollowingUser && styles.followingText]}>
-              {isFollowingUser ? 'Siguiendo' : 'Seguir'}
+              {isFollowingUser ? i18n.t('social.following') : i18n.t('social.follow')}
             </Text>
           </TouchableOpacity>
         )}
@@ -224,13 +225,13 @@ export default function SocialScreen() {
               <Ionicons name="search" size={20} color="#999" />
               <TextInput
                 style={styles.searchInput}
-                placeholder="Buscar aventureros..."
+                placeholder={i18n.t('social.searchUsers')}
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 placeholderTextColor="#999"
               />
             </View>
-            {renderList(discovered, searchQuery ? 'No se encontraron resultados' : 'Descubre nuevos usuarios')}
+            {renderList(discovered, searchQuery ? i18n.t('common.search') : i18n.t('social.discover'))}
           </View>
         );
       default:

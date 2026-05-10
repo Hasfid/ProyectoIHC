@@ -537,6 +537,14 @@ export default function CreateRecordScreen() {
           textAlignVertical="top"
           value={descripcion}
           onChangeText={setDescripcion}
+          onKeyPress={(e: any) => {
+            if (Platform.OS === 'web') {
+              if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                e.preventDefault();
+                handlePublish();
+              }
+            }
+          }}
         />
 
         {/* ── Botones de Acción ── */}

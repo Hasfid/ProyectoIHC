@@ -23,8 +23,12 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Modal,
+  Pressable,
+  Keyboard
 } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
@@ -36,6 +40,7 @@ type Message = {
   destinatario_id: string;
   contenido: string;
   created_at: string;
+  is_edited?: boolean;
 };
 
 export default function MessagesScreen() {
@@ -48,15 +53,22 @@ export default function MessagesScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [recipientProfile, setRecipientProfile] = useState<any>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [isBlocked, setIsBlocked] = useState(false);
+  const [chatOptionsVisible, setChatOptionsVisible] = useState(false);
+  const [messageOptionsVisible, setMessageOptionsVisible] = useState<Message | null>(null);
   const flatListRef = useRef<FlatList>(null);
 
+  // Carga inicial
   useEffect(() => {
     fetchSessionAndData();
-    
-    // Suscripción en tiempo real
+  }, []);
+
+  // Suscripción a Realtime
+  useEffect(() => {
+    if (!currentUserId || !userId) return;
+
+    const channelName = `chat_${currentUserId}_${userId}`;
     const channel = supabase
-      .channel('chat-messages')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'mensajes' },
@@ -67,11 +79,15 @@ export default function MessagesScreen() {
               (newMsg.remitente_id === currentUserId && newMsg.destinatario_id === userId) ||
               (newMsg.remitente_id === userId && newMsg.destinatario_id === currentUserId)
             ) {
-              setMessages((prev) => [newMsg, ...prev]);
+              setMessages((prev) => {
+                if (prev.find(m => m.id === newMsg.id)) return prev;
+                return [newMsg, ...prev];
+              });
+              markChatAsRead(currentUserId);
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedMsg = payload.new as Message;
-            setMessages((prev) => prev.map(m => m.id === updatedMsg.id ? updatedMsg : m));
+            setMessages((prev) => prev.map(m => m.id === updatedMsg.id ? { ...m, ...updatedMsg, is_edited: true } : m));
           } else if (payload.eventType === 'DELETE') {
             const deletedId = payload.old.id;
             setMessages((prev) => prev.filter(m => m.id !== deletedId));
@@ -91,16 +107,41 @@ export default function MessagesScreen() {
       setCurrentUserId(session.user.id);
       fetchRecipientProfile();
       fetchMessages(session.user.id);
-      checkIfBlocked(session.user.id);
+      unhideChatLocally(session.user.id);
+      markChatAsRead(session.user.id);
     }
   };
 
-  /** Verifica si el destinatario está en la lista local de bloqueados */
-  const checkIfBlocked = async (myId: string) => {
-    const blockedRaw = await AsyncStorage.getItem(`blocked_users_${myId}`);
-    const blockedUsers = blockedRaw ? JSON.parse(blockedRaw) : [];
-    setIsBlocked(blockedUsers.includes(userId));
+  /** Marca el chat como leído guardando el timestamp actual */
+  const markChatAsRead = async (myId: string) => {
+    try {
+      const storageKey = `last_read_${myId}`;
+      const lastReadRaw = await AsyncStorage.getItem(storageKey);
+      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
+      lastRead[userId] = new Date().toISOString();
+      await AsyncStorage.setItem(storageKey, JSON.stringify(lastRead));
+    } catch (err) {
+      console.error('Error marking chat as read:', err);
+    }
   };
+
+  /** Desoculta el chat si había sido cerrado previamente */
+  const unhideChatLocally = async (myId: string) => {
+    try {
+      const storageKey = `hidden_chats_${myId}`;
+      const hiddenChatsRaw = await AsyncStorage.getItem(storageKey);
+      if (hiddenChatsRaw) {
+        const hiddenChats = JSON.parse(hiddenChatsRaw);
+        if (hiddenChats[userId]) {
+          delete hiddenChats[userId];
+          await AsyncStorage.setItem(storageKey, JSON.stringify(hiddenChats));
+        }
+      }
+    } catch (err) {
+      console.error('Error unhiding chat:', err);
+    }
+  };
+
 
   const fetchRecipientProfile = async () => {
     const { data } = await supabase
@@ -134,30 +175,46 @@ export default function MessagesScreen() {
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !currentUserId || sending) return;
 
-    // Verificar si el usuario está bloqueado localmente
-    const blockedRaw = await AsyncStorage.getItem(`blocked_users_${currentUserId}`);
-    const blockedUsers = blockedRaw ? JSON.parse(blockedRaw) : [];
-    if (blockedUsers.includes(userId)) {
-      Alert.alert('Usuario bloqueado', 'No puedes enviar mensajes a un usuario que has bloqueado.');
-      return;
-    }
-
     setSending(true);
     try {
+      const trimmedMessage = newMessage.trim();
       if (editingMessage) {
-        const { error } = await supabase
+        // Optimistic UI for editing
+        setMessages((prev) => 
+          prev.map((m) => m.id === editingMessage.id ? { ...m, contenido: trimmedMessage, is_edited: true } : m)
+        );
+
+        const { data, error } = await supabase
           .from('mensajes')
-          .update({ contenido: newMessage.trim() })
-          .eq('id', editingMessage.id);
-        if (error) throw error;
+          .update({ contenido: trimmedMessage, is_edited: true })
+          .eq('id', editingMessage.id)
+          .select();
+          
+        if (error || !data || data.length === 0) {
+          // Revert optimistic update on error
+          setMessages((prev) => 
+            prev.map((m) => m.id === editingMessage.id ? { ...m, contenido: editingMessage.contenido, is_edited: false } : m)
+          );
+          if (!error) {
+             Alert.alert('Error de Permisos (RLS)', 'Necesitas habilitar las políticas de UPDATE en la tabla "mensajes" en Supabase.');
+          } else {
+             throw error;
+          }
+        }
         setEditingMessage(null);
       } else {
-        const { error } = await supabase.from('mensajes').insert({
+        const { data, error } = await supabase.from('mensajes').insert({
           remitente_id: currentUserId,
           destinatario_id: userId,
-          contenido: newMessage.trim(),
-        });
+          contenido: trimmedMessage,
+        }).select().single();
         if (error) throw error;
+
+        // Mostrar inmediatamente en la UI por si Realtime demora o no está activado
+        setMessages((prev) => {
+          if (prev.find((m) => m.id === data.id)) return prev;
+          return [data, ...prev];
+        });
       }
       setNewMessage('');
     } catch (err) {
@@ -168,23 +225,7 @@ export default function MessagesScreen() {
   };
 
   const showOptionsMenu = () => {
-    Alert.alert(
-      'Opciones de chat',
-      '¿Qué deseas hacer?',
-      [
-        { 
-          text: 'Eliminar conversación', 
-          style: 'destructive',
-          onPress: handleDeleteChat 
-        },
-        { 
-          text: 'Bloquear usuario', 
-          style: 'destructive',
-          onPress: handleBlockUser 
-        },
-        { text: 'Cancelar', style: 'cancel' }
-      ]
-    );
+    setChatOptionsVisible(true);
   };
 
   /** Oculta la conversación localmente y regresa a la bandeja */
@@ -204,77 +245,37 @@ export default function MessagesScreen() {
     }
   };
 
-  const handleUnblockUser = async () => {
-    if (!currentUserId) return;
-    try {
-      const storageKey = `blocked_users_${currentUserId}`;
-      const blockedRaw = await AsyncStorage.getItem(storageKey);
-      let blockedUsers = blockedRaw ? JSON.parse(blockedRaw) : [];
-      
-      blockedUsers = blockedUsers.filter((id: string) => id !== userId);
-      await AsyncStorage.setItem(storageKey, JSON.stringify(blockedUsers));
-      
-      setIsBlocked(false);
-      Alert.alert('Éxito', 'Usuario desbloqueado correctamente.');
-    } catch (err) {
-      console.error('Error unblocking user:', err);
-    }
-  };
-
-  /** Agrega al usuario a la lista local de bloqueados */
-  const handleBlockUser = async () => {
-    if (!currentUserId) return;
-    try {
-      const storageKey = `blocked_users_${currentUserId}`;
-      const blockedRaw = await AsyncStorage.getItem(storageKey);
-      const blockedUsers = blockedRaw ? JSON.parse(blockedRaw) : [];
-      
-      if (!blockedUsers.includes(userId)) {
-        blockedUsers.push(userId);
-        await AsyncStorage.setItem(storageKey, JSON.stringify(blockedUsers));
-        setIsBlocked(true);
-        Alert.alert('Éxito', 'Usuario bloqueado correctamente.');
-        router.back();
-      }
-    } catch (err) {
-      console.error('Error blocking user:', err);
-    }
-  };
-
   /** Muestra menú de opciones (editar/eliminar) en long press de mensaje propio */
   const handleLongPress = (item: Message) => {
     if (item.remitente_id !== currentUserId) return;
-
-    const options = ['Editar', 'Eliminar', 'Cancelar'];
-    Alert.alert(
-      'Opciones de mensaje',
-      '¿Qué deseas hacer con este mensaje?',
-      [
-        { 
-          text: 'Editar', 
-          onPress: () => {
-            setEditingMessage(item);
-            setNewMessage(item.contenido);
-          } 
-        },
-        { 
-          text: 'Eliminar', 
-          style: 'destructive', 
-          onPress: () => handleDeleteMessage(item.id) 
-        },
-        { text: 'Cancelar', style: 'cancel' }
-      ]
-    );
+    setMessageOptionsVisible(item);
   };
 
   const handleDeleteMessage = async (messageId: string) => {
+    // Guardar estado previo para revertir si falla
+    const previousMessages = [...messages];
+    
+    // Optimistic UI for deleting
+    setMessages((prev) => prev.filter((m) => m.id !== messageId));
+
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('mensajes')
         .delete()
-        .eq('id', messageId);
-      if (error) throw error;
+        .eq('id', messageId)
+        .select();
+
+      if (error || !data || data.length === 0) {
+        // Revertir
+        setMessages(previousMessages);
+        if (!error) {
+          Alert.alert('Error de Permisos (RLS)', 'Necesitas habilitar las políticas de DELETE en la tabla "mensajes" en Supabase.');
+        } else {
+          throw error;
+        }
+      }
     } catch (err) {
+      setMessages(previousMessages); // Revertir
       console.error('Error deleting message:', err);
     }
   };
@@ -291,6 +292,11 @@ export default function MessagesScreen() {
           {item.contenido}
         </Text>
         <View style={styles.messageFooter}>
+          {item.is_edited && (
+            <Text style={[styles.messageTime, isMine ? styles.myMessageTime : styles.theirMessageTime, { marginRight: 4, fontStyle: 'italic' }]}>
+              Editado
+            </Text>
+          )}
           <Text style={[styles.messageTime, isMine ? styles.myMessageTime : styles.theirMessageTime]}>
             {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
@@ -299,25 +305,47 @@ export default function MessagesScreen() {
     );
   };
 
+  const headerHeight = useHeaderHeight();
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      behavior="padding"
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 90}
     >
       <Stack.Screen
         options={{
-          headerTitle: recipientProfile ? (recipientProfile.username || recipientProfile.nombre) : 'Chat',
+          headerShown: true,
+          headerLeft: () => Platform.OS === 'web' ? (
+            <TouchableOpacity 
+              onPress={() => router.canGoBack() ? router.back() : router.replace('/chat')} 
+              style={{ padding: 8, marginRight: 8, flexDirection: 'row', alignItems: 'center' }}
+            >
+              <Ionicons name="arrow-back" size={24} color="#004d40" />
+            </TouchableOpacity>
+          ) : undefined,
+          headerTitle: () => (
+            <TouchableOpacity 
+              style={{ flexDirection: 'row', alignItems: 'center' }}
+              onPress={() => router.push({ pathname: '/user-profile', params: { userId } })}
+            >
+              {recipientProfile?.foto_perfil ? (
+                <Image source={{ uri: recipientProfile.foto_perfil }} style={{ width: 32, height: 32, borderRadius: 16, marginRight: 10 }} />
+              ) : (
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                  <Ionicons name="person" size={16} color="#999" />
+                </View>
+              )}
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#111' }}>
+                {recipientProfile ? (recipientProfile.username || recipientProfile.nombre) : 'Cargando...'}
+              </Text>
+            </TouchableOpacity>
+          ),
           headerBackTitle: 'Atrás',
           headerRight: () => (
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              {recipientProfile?.foto_perfil && (
-                <Image source={{ uri: recipientProfile.foto_perfil }} style={styles.headerAvatar} />
-              )}
-              <TouchableOpacity onPress={showOptionsMenu}>
-                <Ionicons name="ellipsis-vertical" size={24} color="#004d40" style={{ marginRight: 10 }} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity onPress={showOptionsMenu} style={{ padding: 8 }}>
+              <Ionicons name="ellipsis-vertical" size={24} color="#004d40" />
+            </TouchableOpacity>
           ),
         }}
       />
@@ -344,6 +372,14 @@ export default function MessagesScreen() {
           value={newMessage}
           onChangeText={setNewMessage}
           multiline
+          onKeyPress={(e: any) => {
+            if (Platform.OS === 'web') {
+              if (e.nativeEvent.key === 'Enter' && !e.nativeEvent.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+              }
+            }
+          }}
         />
         <TouchableOpacity
           style={[styles.sendButton, !newMessage.trim() && styles.sendButtonDisabled, editingMessage && { backgroundColor: '#2e7d32' }]}
@@ -365,6 +401,49 @@ export default function MessagesScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Modal Opciones de Chat */}
+      <Modal visible={chatOptionsVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setChatOptionsVisible(false)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Opciones de chat</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={() => { setChatOptionsVisible(false); handleDeleteChat(); }}>
+              <Text style={styles.modalButtonDestructive}>Cerrar chat</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => setChatOptionsVisible(false)}>
+              <Text style={styles.modalButtonCancel}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Modal Opciones de Mensaje */}
+      <Modal visible={!!messageOptionsVisible} transparent animationType="fade">
+        <Pressable style={styles.modalOverlay} onPress={() => setMessageOptionsVisible(null)}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Opciones de mensaje</Text>
+            <TouchableOpacity style={styles.modalButton} onPress={() => { 
+              if (messageOptionsVisible) {
+                setEditingMessage(messageOptionsVisible);
+                setNewMessage(messageOptionsVisible.contenido);
+              }
+              setMessageOptionsVisible(null);
+            }}>
+              <Text style={styles.modalButtonText}>Editar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => {
+              if (messageOptionsVisible) handleDeleteMessage(messageOptionsVisible.id);
+              setMessageOptionsVisible(null);
+            }}>
+              <Text style={styles.modalButtonDestructive}>Eliminar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalButton} onPress={() => setMessageOptionsVisible(null)}>
+              <Text style={styles.modalButtonCancel}>Cancelar</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+
     </KeyboardAvoidingView>
   );
 }
@@ -465,5 +544,43 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#ccc',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    padding: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  modalButton: {
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    color: '#007AFF',
+  },
+  modalButtonDestructive: {
+    fontSize: 16,
+    color: '#FF3B30',
+  },
+  modalButtonCancel: {
+    fontSize: 16,
+    color: '#888',
+    fontWeight: 'bold',
   },
 });
