@@ -1,14 +1,13 @@
 /**
- * Map.web.tsx — Mapa interactivo Leaflet para la versión web de Ecos.
+ * Map.web.tsx — Mapa satelital inmersivo para la versión web de Ecos.
  *
- * Renderiza un mapa con:
- * - Polígono delimitando la región de la Guayana venezolana
- * - Oscurecimiento del resto del mundo
- * - Chinchetas personalizadas con foto del registro y borde por categoría
- * - Popups glassmorphism con imagen, metadatos y etiquetas
- *
- * Carga Leaflet de forma asíncrona (react-leaflet + leaflet) para evitar
- * problemas de SSR. El CSS se inyecta globalmente antes del primer render.
+ * Características:
+ * - Capa satelital Esri World Imagery (selva real de la Guayana)
+ * - Animación flyTo al cargar: zoom desde vista general hasta coordenadas focales
+ * - Marcadores circulares con borde blanco y sombra estilo Tailwind (divIcon)
+ * - Polígono delimitador de la Guayana con borde neón y relleno transparente
+ * - Popups glassmorphism estilo HUD
+ * - Toda la lógica de datos se mantiene intacta (Supabase → registros)
  *
  * @module components/Map.web
  */
@@ -21,10 +20,10 @@ import { supabase } from '../lib/supabase';
 
 import { GUAYANA_POLYGON as GF_POLYGON } from '../lib/geofence';
 
-/** Polígono aproximado de la Guayana venezolana, transformado para Leaflet */
+/** Polígono de la Guayana venezolana transformado para Leaflet [lat, lng] */
 const GUAYANA_POLYGON: [number, number][] = GF_POLYGON.map(p => [p.latitude, p.longitude]);
 
-/** Polígono que cubre todo el mundo (para el efecto de oscurecimiento) */
+/** Polígono que cubre todo el mundo (máscara de oscurecimiento) */
 const WORLD_BOUNDS: [number, number][] = [
   [90, -180],
   [-90, -180],
@@ -32,127 +31,155 @@ const WORLD_BOUNDS: [number, number][] = [
   [90, 180],
 ];
 
-/** Centro geográfico inicial del mapa [lat, lng] */
-const MAP_CENTER: [number, number] = [5.0, -63.5];
+/** Zoom de inicio (vista general del mapa) */
+const MAP_ZOOM_START = 5;
 
-/** Nivel de zoom inicial */
-const MAP_ZOOM = 6;
+/** Centro geográfico inicial (vista general) */
+const MAP_CENTER_START: [number, number] = [5.0, -63.5];
+
+/** Coordenadas de destino del flyTo de entrada */
+const FLY_TO_TARGET: [number, number] = [5.8, -61.3];
+
+/** Zoom de destino del flyTo de entrada */
+const FLY_TO_ZOOM = 14;
+
+/** Duración de la animación flyTo en segundos */
+const FLY_TO_DURATION = 4;
 
 // ── Inyección de CSS ─────────────────────────────────────────────────────────
 
 const LEAFLET_CSS_ID = 'leaflet-css';
 
 if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID)) {
-  // CSS base de Leaflet
   const link = document.createElement('link');
   link.id = LEAFLET_CSS_ID;
   link.rel = 'stylesheet';
   link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
   document.head.appendChild(link);
 
-  // Estilos custom (popups glassmorphism, pins, animaciones)
   const style = document.createElement('style');
   style.textContent = `
-    .leaflet-container { width: 100% !important; height: 100% !important; }
+    /* ── Base Leaflet ── */
+    .leaflet-container {
+      width: 100% !important;
+      height: 100% !important;
+      background: #000 !important;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
     .leaflet-tile-pane img { max-width: none !important; }
     .custom-pin-icon { background: none !important; border: none !important; }
 
-    /* Popup glassmorphism */
+    /* ── Controles: estilo HUD flotante ── */
+    .leaflet-control-zoom {
+      border: none !important;
+      border-radius: 12px !important;
+      overflow: hidden !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+      backdrop-filter: blur(8px);
+    }
+    .leaflet-control-zoom a {
+      background: rgba(0,0,0,0.5) !important;
+      color: #fff !important;
+      border: 1px solid rgba(52,211,153,0.3) !important;
+      font-size: 18px !important;
+      width: 36px !important;
+      height: 36px !important;
+      line-height: 36px !important;
+      backdrop-filter: blur(8px);
+    }
+    .leaflet-control-zoom a:hover {
+      background: rgba(52,211,153,0.25) !important;
+      color: #34d399 !important;
+    }
+    .leaflet-control-attribution {
+      background: rgba(0,0,0,0.5) !important;
+      color: rgba(255,255,255,0.5) !important;
+      backdrop-filter: blur(8px);
+      border-radius: 6px 0 0 0 !important;
+      font-size: 9px !important;
+      padding: 2px 6px !important;
+    }
+    .leaflet-control-attribution a { color: rgba(52,211,153,0.8) !important; }
+
+    /* ── Marcadores: hover y transición ── */
+    .eco-pin-wrapper {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+    }
+    .eco-pin-wrapper:hover {
+      transform: scale(1.12) translateY(-4px);
+    }
+
+    /* ── Popup: glassmorphism HUD ── */
     .ecos-popup .leaflet-popup-content-wrapper {
-      background: rgba(10, 20, 16, 0.95);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      border: 1px solid rgba(164, 255, 68, 0.25);
-      border-radius: 16px;
-      padding: 0;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 0 20px rgba(164,255,68,0.08);
-      overflow: hidden;
-      min-width: 240px;
+      background: rgba(5, 10, 8, 0.85) !important;
+      backdrop-filter: blur(16px) !important;
+      -webkit-backdrop-filter: blur(16px) !important;
+      border: 1px solid rgba(52, 211, 153, 0.35) !important;
+      border-radius: 12px !important;
+      padding: 0 !important;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(52,211,153,0.1) !important;
+      overflow: hidden !important;
+      min-width: 240px !important;
     }
     .ecos-popup .leaflet-popup-content {
       margin: 0 !important;
       width: 240px !important;
     }
-    .ecos-popup .leaflet-popup-tip {
-      background: rgba(10, 20, 16, 0.95);
-      border: 1px solid rgba(164, 255, 68, 0.25);
-      border-top: none;
-      border-left: none;
-      box-shadow: none;
-    }
+    .ecos-popup .leaflet-popup-tip-container { display: none !important; }
     .ecos-popup .leaflet-popup-close-button {
-      color: #fff !important;
-      font-size: 20px !important;
-      top: 8px !important;
-      right: 8px !important;
-      z-index: 10;
-      background: rgba(0,0,0,0.4);
-      border-radius: 50%;
-      width: 26px !important;
-      height: 26px !important;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      line-height: 26px !important;
+      color: #34d399 !important;
+      font-size: 18px !important;
+      top: 10px !important;
+      right: 10px !important;
+      z-index: 10 !important;
+      background: rgba(0,0,0,0.6) !important;
+      border-radius: 50% !important;
+      width: 24px !important;
+      height: 24px !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      line-height: 24px !important;
       padding: 0 !important;
+      border: 1px solid rgba(52,211,153,0.3) !important;
     }
     .ecos-popup .leaflet-popup-close-button:hover {
-      color: #a4ff44 !important;
+      background: rgba(52,211,153,0.3) !important;
+      color: #fff !important;
     }
-
-    /* Animación de entrada */
     .leaflet-popup {
-      transition: opacity 0.2s ease, transform 0.2s ease;
-    }
-
-    /* Hover en pins */
-    .eco-pin {
-      transition: transform 0.2s ease;
-      cursor: pointer;
-    }
-    .eco-pin:hover {
-      transform: scale(1.15) translateY(-3px);
+      transition: opacity 0.25s ease, transform 0.25s ease;
     }
   `;
   document.head.appendChild(style);
 }
 
-// ── Helpers de categorización ────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Devuelve un color de borde según la categoría inferida del nombre */
-const getCategoryColor = (item: any): string => {
-  const nombre = (item.nombre_tradicional || '').toLowerCase();
-  if (nombre.includes('jaguar') || nombre.includes('tigre') || nombre.includes('chigüire')) return '#ff9100';
-  if (nombre.includes('guacamaya') || nombre.includes('ave') || nombre.includes('loro')) return '#00b0ff';
-  if (nombre.includes('rana') || nombre.includes('sapo') || nombre.includes('serpiente')) return '#ff5252';
-  return '#00e676';
-};
-
-/** Devuelve una etiqueta emoji + categoría para el badge del popup */
+/** Devuelve una etiqueta de categoría en mayúsculas */
 const getCategoryLabel = (item: any): string => {
-  const nombre = (item.nombre_tradicional || '').toLowerCase();
-  if (nombre.includes('jaguar') || nombre.includes('tigre') || nombre.includes('chigüire') || nombre.includes('mono')) return '🐾 Mamífero';
-  if (nombre.includes('guacamaya') || nombre.includes('ave') || nombre.includes('loro') || nombre.includes('tucán')) return '🐦 Ave';
-  if (nombre.includes('rana') || nombre.includes('sapo') || nombre.includes('serpiente') || nombre.includes('iguana')) return '🦎 Reptil/Anfibio';
-  if (nombre.includes('orquídea') || nombre.includes('flor') || nombre.includes('planta') || nombre.includes('árbol')) return '🌿 Flora';
-  return '🌿 Especie';
+  const n = (item.nombre_tradicional || '').toLowerCase();
+  if (n.includes('jaguar') || n.includes('tigre') || n.includes('mono') || n.includes('chigüire')) return '🐾 MAMÍFERO';
+  if (n.includes('guacamaya') || n.includes('ave') || n.includes('loro') || n.includes('tucán')) return '🐦 AVE';
+  if (n.includes('rana') || n.includes('sapo') || n.includes('serpiente') || n.includes('iguana')) return '🦎 REPTIL';
+  if (n.includes('orquídea') || n.includes('flor') || n.includes('planta') || n.includes('árbol')) return '🌿 FLORA';
+  return '🌿 ESPECIE';
 };
 
-/** Formatea una fecha ISO a formato legible (ej: "6 may 2026") */
+/** Formatea fecha ISO a legible */
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return '';
   try {
     return new Date(dateStr).toLocaleDateString('es-VE', {
       day: 'numeric', month: 'short', year: 'numeric',
     });
-  } catch {
-    return '';
-  }
+  } catch { return ''; }
 };
 
 /**
- * Desplaza ligeramente los pines que comparten exactamente la misma coordenada
- * para que no queden 100% ocultos uno detrás de otro.
+ * Desplaza pines que comparten exactamente la misma coordenada en espiral,
+ * para que ninguno quede completamente oculto detrás de otro.
  */
 const offsetOverlappingRecords = (records: any[]) => {
   const seen: Record<string, number> = {};
@@ -160,38 +187,29 @@ const offsetOverlappingRecords = (records: any[]) => {
     let lat = parseFloat(record.latitud);
     let lng = parseFloat(record.longitud);
     if (isNaN(lat) || isNaN(lng)) return record;
-    
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (seen[key] !== undefined) {
       seen[key]++;
-      // ~20-30 metros de separación por cada registro repetido en patrón espiral
-      const offset = seen[key] * 0.0002; 
-      const angle = seen[key] * (Math.PI / 3); // 60 grados
+      const offset = seen[key] * 0.0002;
+      const angle = seen[key] * (Math.PI / 3);
       lat += Math.cos(angle) * offset;
       lng += Math.sin(angle) * offset;
     } else {
       seen[key] = 0;
     }
-    
     return { ...record, _renderLat: lat, _renderLng: lng };
   });
 };
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-/**
- * Mapa web con Leaflet para visualizar registros de biodiversidad.
- *
- * Carga las dependencias de Leaflet de forma asíncrona y espera a que
- * el CSS esté disponible antes de renderizar para evitar FOUC.
- */
 export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
   const [cssReady, setCssReady] = useState(false);
 
   useEffect(() => {
-    // Esperar a que el CSS de Leaflet esté cargado
+    // Esperar a que el CSS de Leaflet esté cargado para evitar FOUC
     const checkCss = () => {
       const link = document.getElementById(LEAFLET_CSS_ID) as HTMLLinkElement;
       if (link?.sheet) {
@@ -207,11 +225,13 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
       import('react-leaflet'),
       import('leaflet'),
     ]).then(([reactLeaflet, L]) => {
-      const { MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents } = reactLeaflet;
-      setMapComponents({ MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents, L: L.default || L });
-    }).catch(err => {
-      console.error('Error loading Leaflet:', err);
-    });
+      const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents } = reactLeaflet;
+      setMapComponents({
+        MapContainer, TileLayer, Marker, Popup, Polygon,
+        useMap, useMapEvents,
+        L: L.default || L,
+      });
+    }).catch(err => console.error('Error loading Leaflet:', err));
 
     fetchRecords();
   }, []);
@@ -228,13 +248,38 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
     }
   };
 
-  // ── Loading state ────────────────────────────────────────────────────────
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (!MapComponents || !cssReady) {
-    return <View style={styles.container} />;
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingOverlay}>
+          {/* Pantalla de carga minimalista */}
+        </View>
+      </View>
+    );
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMapEvents, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents, L } = MapComponents;
 
+  // ── Sub-componentes internos ───────────────────────────────────────────────
+
+  /** Animación de entrada: flyTo desde zoom general hasta el punto focal */
+  const IntroFlyTo = () => {
+    const map = useMap();
+    useEffect(() => {
+      // Pequeño delay para que el mapa termine de montarse
+      const timer = setTimeout(() => {
+        map.flyTo(FLY_TO_TARGET, FLY_TO_ZOOM, {
+          animate: true,
+          duration: FLY_TO_DURATION,
+        });
+      }, 800);
+      return () => clearTimeout(timer);
+    }, [map]);
+    return null;
+  };
+
+  /** Listener de movimiento para el callback externo */
   const MapEventsComponent = () => {
     useMapEvents({
       moveend: (e: any) => {
@@ -242,136 +287,314 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
           const center = e.target.getCenter();
           onRegionChangeComplete({ latitude: center.lat, longitude: center.lng });
         }
-      }
+      },
     });
     return null;
   };
 
-  /** Crea un DivIcon de Leaflet con foto circular y flecha de color */
-  const createCustomIcon = (imageUrl: string, color: string) => {
+  /**
+   * Crea un L.divIcon inmersivo con clases de Tailwind:
+   * - Círculo rounded-full con borde blanco grueso (border-4 border-white)
+   * - Sombra pronunciada (shadow-2xl) para resaltar sobre la selva
+   * - Imagen de la especie dentro del círculo
+   * - Etiqueta del nombre debajo con efecto cristal
+   */
+  const createCustomIcon = (imageUrl: string, name: string) => {
+    const displayName = (name || 'Especie').toUpperCase();
+    const fallbackBg = !imageUrl ? 'background:#1a2e1a;' : '';
+
     return L.divIcon({
       className: 'custom-pin-icon',
       html: `
-        <div class="eco-pin" style="display:flex;flex-direction:column;align-items:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">
-          <div style="width:50px;height:50px;border-radius:25px;border:3px solid ${color};background:#111;overflow:hidden;box-shadow:0 0 10px ${color}44;">
-            <img src="${imageUrl}" style="width:100%;height:100%;object-fit:cover;" onerror="this.style.display='none'" />
+        <div class="eco-pin-wrapper" style="
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 6px;
+        ">
+          <!-- Círculo principal -->
+          <div style="
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 4px solid white;
+            overflow: hidden;
+            ${fallbackBg}
+            background-color: ${!imageUrl ? '#1a2e1a' : '#000'};
+            box-shadow:
+              0 20px 60px rgba(0,0,0,0.7),
+              0 0 0 2px rgba(52,211,153,0.4),
+              0 0 20px rgba(52,211,153,0.2);
+          ">
+            ${imageUrl
+              ? `<img
+                  src="${imageUrl}"
+                  style="width:100%;height:100%;object-fit:cover;display:block;"
+                  onerror="this.parentElement.style.background='#1a2e1a'"
+                />`
+              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;">🌿</div>`
+            }
           </div>
-          <div style="width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-top:14px solid ${color};margin-top:-3px;"></div>
+
+          <!-- Etiqueta glassmorphism -->
+          <div style="
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 9px;
+            font-weight: 700;
+            color: white;
+            letter-spacing: 1.5px;
+            font-family: ui-monospace, monospace;
+            white-space: nowrap;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+          ">
+            ${displayName}
+          </div>
         </div>
       `,
-      iconSize: [50, 61],
-      iconAnchor: [25, 61],
-      popupAnchor: [0, -65],
+      iconSize: [64, 100],
+      iconAnchor: [32, 50],
+      popupAnchor: [0, -54],
     });
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
+
+      {/* ── Header HUD flotante ── */}
+      <div style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '10px 16px',
+        background: 'rgba(0,0,0,0.40)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        borderBottom: '1px solid rgba(52,211,153,0.25)',
+        pointerEvents: 'none',
+      }}>
+        {/* Logo + título */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            background: 'rgba(52,211,153,0.2)',
+            border: '1px solid rgba(52,211,153,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 16,
+          }}>🌿</div>
+          <div>
+            <div style={{
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 700,
+              fontFamily: 'ui-monospace, monospace',
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              lineHeight: 1.2,
+            }}>Eco-Guayana</div>
+            <div style={{
+              color: '#34d399',
+              fontSize: 9,
+              fontFamily: 'ui-monospace, monospace',
+              letterSpacing: '1.5px',
+              textTransform: 'uppercase',
+            }}>Zonas de Avistamiento</div>
+          </div>
+        </div>
+
+        {/* Indicador de estado */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: '50%',
+            background: '#34d399',
+            boxShadow: '0 0 6px #34d399',
+          }} />
+          <span style={{
+            color: 'rgba(255,255,255,0.7)',
+            fontSize: 9,
+            fontFamily: 'ui-monospace, monospace',
+            letterSpacing: '1px',
+          }}>LIVE</span>
+        </div>
+      </div>
+
       <MapContainer
-        center={MAP_CENTER}
-        zoom={MAP_ZOOM}
+        center={MAP_CENTER_START}
+        zoom={MAP_ZOOM_START}
+        maxZoom={18}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
+        zoomControl={true}
       >
+        {/* Animación de entrada flyTo */}
+        <IntroFlyTo />
+
+        {/* Listener de eventos */}
         <MapEventsComponent />
+
+        {/* ── Capa Satelital Esri World Imagery ── */}
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+          attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+          maxNativeZoom={18}
+          maxZoom={18}
         />
 
-        {/* Oscurece todo excepto la Guayana */}
+        {/* ── Máscara: oscurece el resto del mundo ── */}
         <Polygon
           positions={[WORLD_BOUNDS, GUAYANA_POLYGON]}
-          pathOptions={{ fillColor: 'black', fillOpacity: 0.7, stroke: false }}
+          pathOptions={{
+            fillColor: '#000000',
+            fillOpacity: 0.55,
+            stroke: false,
+          }}
         />
 
-        {/* Borde de la región Guayana */}
+        {/* ── Contorno neón de la Guayana ── */}
         <Polygon
           positions={GUAYANA_POLYGON}
-          pathOptions={{ fillColor: 'transparent', color: '#00e676', weight: 2 }}
+          pathOptions={{
+            fillColor: 'transparent',
+            fillOpacity: 0,
+            color: '#34d399',      /* emerald-400 */
+            weight: 1.5,
+            opacity: 0.8,
+            dashArray: '6, 4',    /* línea punteada sutil */
+          }}
         />
 
-        {/* Pins de registros */}
+        {/* ── Marcadores de registros (datos de Supabase) ── */}
         {records.map((record: any) => {
           const lat = record._renderLat;
           const lng = record._renderLng;
           if (lat == null || lng == null) return null;
 
-          const color = getCategoryColor(record);
-
           return (
             <Marker
               key={record.id}
               position={[lat, lng]}
-              icon={createCustomIcon(record.media_url, color)}
+              icon={createCustomIcon(record.media_url, record.nombre_tradicional)}
             >
               <Popup className="ecos-popup" maxWidth={260} minWidth={240}>
                 <div style={{ margin: 0, padding: 0 }}>
-                  {/* Imagen principal */}
-                  <div style={{ width: '100%', height: 150, overflow: 'hidden', position: 'relative' }}>
-                    <img
-                      src={record.media_url}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                    />
+
+                  {/* ── Imagen de cabecera ── */}
+                  <div style={{ width: '100%', height: 145, overflow: 'hidden', position: 'relative' }}>
+                    {record.media_url ? (
+                      <img
+                        src={record.media_url}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', background: '#0a1a0e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>
+                        🌿
+                      </div>
+                    )}
+                    {/* Badge de categoría */}
                     <div style={{
                       position: 'absolute', bottom: 8, left: 8,
-                      background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(8px)',
-                      padding: '3px 10px', borderRadius: 20,
-                      fontSize: 11, color: '#fff', fontWeight: 600,
+                      background: 'rgba(0,0,0,0.75)',
+                      backdropFilter: 'blur(8px)',
+                      padding: '3px 10px',
+                      borderRadius: 4,
+                      border: '1px solid rgba(52,211,153,0.5)',
+                      fontSize: 9,
+                      color: '#34d399',
+                      fontWeight: 700,
+                      fontFamily: 'ui-monospace, monospace',
+                      letterSpacing: '1.5px',
                     }}>
                       {getCategoryLabel(record)}
                     </div>
                   </div>
 
-                  {/* Contenido */}
+                  {/* ── Contenido HUD ── */}
                   <div style={{ padding: '14px 16px 16px' }}>
-                    <div style={{ color: '#fff', fontSize: 17, fontWeight: 'bold', marginBottom: 2, lineHeight: '1.3' }}>
-                      {record.nombre_tradicional}
+
+                    {/* Nombre */}
+                    <div style={{
+                      color: '#fff',
+                      fontSize: 15,
+                      fontWeight: 700,
+                      marginBottom: 2,
+                      fontFamily: 'ui-monospace, monospace',
+                      letterSpacing: '0.5px',
+                    }}>
+                      {(record.nombre_tradicional || '—').toUpperCase()}
                     </div>
 
+                    {/* Nombre científico */}
                     {record.nombre_cientifico && (
-                      <div style={{ color: '#a4ff44', fontSize: 12, fontStyle: 'italic', marginBottom: 10 }}>
-                        {record.nombre_cientifico}
+                      <div style={{
+                        color: '#34d399',
+                        fontSize: 11,
+                        fontStyle: 'italic',
+                        marginBottom: 10,
+                        fontFamily: 'ui-monospace, monospace',
+                      }}>
+                        &gt; {record.nombre_cientifico}
                       </div>
                     )}
 
+                    {/* Descripción */}
                     {record.descripcion && (
                       <div style={{
-                        color: '#aaa', fontSize: 12, lineHeight: '1.5', marginBottom: 10,
-                        display: '-webkit-box', WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                        color: '#9ca3af',
+                        fontSize: 11,
+                        lineHeight: '1.55',
+                        marginBottom: 10,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden',
+                        fontFamily: 'ui-sans-serif, system-ui',
                       }}>
                         {record.descripcion}
                       </div>
                     )}
 
                     {/* Coordenadas + Fecha */}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <div style={metaBadgeStyle}>
-                        📍 {lat.toFixed(2)}, {lng.toFixed(2)}
+                        [{lat.toFixed(4)}, {lng.toFixed(4)}]
                       </div>
                       {record.created_at && (
                         <div style={metaBadgeStyle}>
-                          📅 {formatDate(record.created_at)}
+                          T · {formatDate(record.created_at)}
                         </div>
                       )}
                     </div>
 
-                    {/* Etiquetas de alimentación / hábitat */}
+                    {/* Etiquetas hábitat / alimentación */}
                     {(record.alimentacion || record.habitat) && (
                       <div style={{
-                        marginTop: 10, paddingTop: 10,
-                        borderTop: '1px solid rgba(255,255,255,0.08)',
-                        display: 'flex', gap: 6, flexWrap: 'wrap',
+                        marginTop: 10,
+                        paddingTop: 10,
+                        borderTop: '1px solid rgba(52,211,153,0.12)',
+                        display: 'flex',
+                        gap: 6,
+                        flexWrap: 'wrap',
                       }}>
                         {record.alimentacion && (
-                          <span style={tagStyle('#a4ff44', 'rgba(164,255,68,0.12)')}>
+                          <span style={tagStyle('#34d399', 'rgba(52,211,153,0.1)')}>
                             🍃 {record.alimentacion}
                           </span>
                         )}
                         {record.habitat && (
-                          <span style={tagStyle('#00b0ff', 'rgba(0,176,255,0.12)')}>
+                          <span style={tagStyle('#60a5fa', 'rgba(96,165,250,0.1)')}>
                             🏔️ {record.habitat}
                           </span>
                         )}
@@ -388,24 +611,40 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
   );
 }
 
-// ── Estilos inline reutilizables para el popup (JSX web) ─────────────────────
+// ── Estilos inline reutilizables (popup JSX web) ─────────────────────────────
 
 const metaBadgeStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 4,
-  background: 'rgba(255,255,255,0.06)',
-  padding: '4px 8px', borderRadius: 8,
-  fontSize: 11, color: '#888',
+  display: 'inline-flex',
+  alignItems: 'center',
+  background: 'rgba(52,211,153,0.08)',
+  border: '1px solid rgba(52,211,153,0.25)',
+  padding: '3px 7px',
+  borderRadius: 4,
+  fontSize: 9,
+  color: '#6ee7b7',
+  fontFamily: 'ui-monospace, monospace',
+  letterSpacing: '0.5px',
 };
 
 const tagStyle = (color: string, bg: string): React.CSSProperties => ({
-  background: bg, color, padding: '3px 8px',
-  borderRadius: 6, fontSize: 10, fontWeight: 600,
+  background: bg,
+  color,
+  padding: '3px 8px',
+  borderRadius: 6,
+  fontSize: 10,
+  fontWeight: 600,
+  border: `1px solid ${color}33`,
 });
 
-// ── Estilos React Native ─────────────────────────────────────────────────────
+// ── Estilos React Native ──────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: '#000',
   },
 });
