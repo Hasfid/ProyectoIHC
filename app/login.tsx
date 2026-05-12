@@ -94,33 +94,53 @@ export default function LoginScreen() {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.topSection}>
-        <Text style={styles.logoText}>Ecos</Text>
+      {/* Gradient background simulated with layered views */}
+      <View style={styles.gradientBackground}>
+        <View style={styles.gradientLayer1} />
+        <View style={styles.gradientLayer2} />
       </View>
 
-      <View style={styles.bottomSection}>
+      {/* Logo / Top Section */}
+      <View style={styles.topSection}>
+        <View style={styles.logoPlaceholder}>
+          <Ionicons name="leaf" size={48} color="#FFFFFF" />
+        </View>
+        <Text style={styles.logoText}>Ecos</Text>
+        <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
+      </View>
+
+      {/* White card */}
+      <View style={styles.card}>
         <Text style={styles.title}>Iniciar Sesión</Text>
 
         {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
 
+        {/* Email input with icon */}
         <Text style={styles.label}>Correo Electrónico</Text>
-        <TextInput
-          style={[styles.input, errors.email ? styles.inputError : null]}
-          placeholder="tu@correo.com"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          maxLength={60}
-          value={email}
-          onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
-          onSubmitEditing={handleLogin}
-        />
+        <View style={[styles.inputContainer, errors.email ? styles.inputError : null]}>
+          <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
+          <TextInput
+            style={styles.input}
+            placeholder="tu@correo.com"
+            placeholderTextColor="#AAAAAA"
+            autoCapitalize="none"
+            keyboardType="email-address"
+            maxLength={60}
+            value={email}
+            onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
+            onSubmitEditing={handleLogin}
+          />
+        </View>
         {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
+        {/* Password input with icon */}
         <Text style={styles.label}>Contraseña</Text>
         <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
+          <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
           <TextInput
             style={styles.passwordInput}
             placeholder="Mínimo 8 caracteres"
+            placeholderTextColor="#AAAAAA"
             secureTextEntry={!showPassword}
             maxLength={30}
             value={password}
@@ -128,11 +148,13 @@ export default function LoginScreen() {
             onSubmitEditing={handleLogin}
           />
           <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-            <Ionicons name={showPassword ? "eye-off" : "eye"} size={24} color="#888" />
+            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#999" />
           </TouchableOpacity>
         </View>
+        <Text style={styles.hintText}>Mínimo 8 caracteres</Text>
         {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
+        {/* Login button */}
         <TouchableOpacity 
           style={[styles.button, loading && styles.buttonDisabled]} 
           onPress={handleLogin}
@@ -141,6 +163,26 @@ export default function LoginScreen() {
           <Text style={styles.buttonText}>{loading ? 'Cargando...' : 'Entrar'}</Text>
         </TouchableOpacity>
 
+        {/* Separator */}
+        <View style={styles.separatorRow}>
+          <View style={styles.separatorLine} />
+          <Text style={styles.separatorText}>o continuar con</Text>
+          <View style={styles.separatorLine} />
+        </View>
+
+        {/* Social buttons placeholder */}
+        <View style={styles.socialRow}>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+            <Ionicons name="logo-google" size={22} color="#333333" />
+            <Text style={styles.socialButtonText}>Google</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+            <Ionicons name="logo-apple" size={22} color="#333333" />
+            <Text style={styles.socialButtonText}>Apple</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Footer */}
         <View style={styles.footerRow}>
           <Text style={styles.footerText}>¿No tienes cuenta? </Text>
           <TouchableOpacity onPress={() => router.push('/register')}>
@@ -155,115 +197,245 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#2D5A27',
   },
+
+  /* ── Gradient background (simulated) ── */
+  gradientBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gradientLayer1: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#2D5A27',
+  },
+  gradientLayer2: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+    backgroundColor: '#4A7C3F',
+    opacity: 0.5,
+    borderTopLeftRadius: 200,
+    borderTopRightRadius: 200,
+  },
+
+  /* ── Top logo section ── */
   topSection: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    paddingTop: 20,
+    minHeight: 180,
+  },
+  logoPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   logoText: {
-    fontSize: 54,
+    fontSize: 42,
     fontWeight: '900',
-    color: '#2e7d32',
-    letterSpacing: 2,
+    color: '#FFFFFF',
+    letterSpacing: 3,
   },
-  bottomSection: {
-    flex: 2,
-    padding: 24,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+  subtitleText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+    letterSpacing: 1.5,
+    fontWeight: '500',
+  },
+
+  /* ── White card ── */
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 28,
+    paddingTop: 32,
+    paddingBottom: 36,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 12,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     marginBottom: 24,
-    color: '#111',
+    color: '#333333',
+    textAlign: 'center',
   },
+
+  /* ── Labels ── */
   label: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
-    color: '#444',
+    color: '#555555',
+    marginLeft: 4,
+  },
+
+  /* ── Input fields ── */
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+  inputIcon: {
+    paddingLeft: 14,
+    paddingRight: 4,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    color: '#333333',
   },
   inputError: {
     borderColor: '#d32f2f',
-    backgroundColor: '#fff5f5',
+    backgroundColor: '#FFF5F5',
   },
   errorText: {
     color: '#d32f2f',
     fontSize: 12,
-    marginTop: -15,
-    marginBottom: 15,
-    marginLeft: 4,
+    marginTop: -10,
+    marginBottom: 12,
+    marginLeft: 8,
   },
   errorTextGeneral: {
     color: '#d32f2f',
     fontSize: 14,
-    marginBottom: 15,
+    marginBottom: 16,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    backgroundColor: '#FFF5F5',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
+
+  /* ── Password field ── */
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
-    marginBottom: 20,
-    backgroundColor: '#fafafa',
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
   },
   passwordInput: {
     flex: 1,
-    padding: 14,
-    fontSize: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    color: '#333333',
   },
   eyeIcon: {
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
+  hintText: {
+    fontSize: 11,
+    color: '#AAAAAA',
+    marginBottom: 16,
+    marginLeft: 8,
+  },
+
+  /* ── Button ── */
   button: {
-    backgroundColor: '#2e7d32',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#1B5E20',
+    paddingVertical: 14,
+    borderRadius: 25,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
+    shadowColor: '#1B5E20',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   buttonDisabled: {
-    backgroundColor: '#a5d6a7',
+    backgroundColor: '#A5D6A7',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
+
+  /* ── Separator ── */
+  separatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0E0',
+  },
+  separatorText: {
+    marginHorizontal: 14,
+    fontSize: 13,
+    color: '#AAAAAA',
+    fontWeight: '500',
+  },
+
+  /* ── Social buttons ── */
+  socialRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 16,
+    marginBottom: 24,
+  },
+  socialButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    backgroundColor: '#FAFAFA',
+    gap: 8,
+  },
+  socialButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+  },
+
+  /* ── Footer ── */
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 4,
   },
   footerText: {
-    color: '#555',
-    fontSize: 15,
+    color: '#888888',
+    fontSize: 14,
   },
   linkText: {
-    color: '#2e7d32',
-    fontSize: 15,
-    fontWeight: 'bold',
+    color: '#2D5A27',
+    fontSize: 14,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
