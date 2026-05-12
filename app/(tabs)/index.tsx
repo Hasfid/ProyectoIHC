@@ -4,16 +4,62 @@
  * Muestra el mapa interactivo de avistamientos y un acceso rápido al chat.
  */
 
-import React from 'react';
-import { StyleSheet, View, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, TouchableOpacity, Text } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs, useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
+import { supabase } from '../../lib/supabase';
 
 export default function DiscoverScreen() {
   const router = useRouter();
+  const [unreadMessages, setUnreadMessages] = useState(0);
+
+  const fetchUnreadMessages = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      const uid = session.user.id;
+
+      const { data: messages, error } = await supabase
+        .from('mensajes')
+        .select('id, remitente_id, created_at')
+        .eq('destinatario_id', uid)
+        .order('created_at', { ascending: false });
+
+      if (error || !messages) return;
+
+      const lastReadRaw = await AsyncStorage.getItem(`last_read_${uid}`);
+      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
+
+      let total = 0;
+      messages.forEach(msg => {
+        const senderId = msg.remitente_id;
+        const lastReadTime = lastRead[senderId];
+        if (!lastReadTime || new Date(msg.created_at) > new Date(lastReadTime)) {
+          total++;
+        }
+      });
+
+      setUnreadMessages(total);
+    } catch (err) {
+      console.error('fetchUnreadMessages (discover):', err);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchUnreadMessages();
+    }, [])
+  );
+
+  useEffect(() => {
+    const interval = setInterval(fetchUnreadMessages, 10_000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -28,6 +74,11 @@ export default function DiscoverScreen() {
             <Ionicons name="chatbubbles" size={28} color="#004d40" style={styles.icon} />
           </BlurView>
         </TouchableOpacity>
+        {unreadMessages > 0 && (
+          <View style={styles.chatBadge}>
+            <Text style={styles.chatBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -53,7 +104,7 @@ const styles = StyleSheet.create({
     bottom: 40,
     right: 24,
     borderRadius: 30,
-    overflow: 'hidden',
+    overflow: 'visible',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
@@ -74,5 +125,24 @@ const styles = StyleSheet.create({
   },
   icon: {
     transform: [{ rotate: '-15deg' }, { translateX: -2 }, { translateY: 2 }],
-  }
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#e53935',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  chatBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
 });

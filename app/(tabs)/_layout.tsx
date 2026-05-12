@@ -17,6 +17,7 @@ import { createMaterialTopTabNavigator } from '@react-navigation/material-top-ta
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
 
@@ -27,6 +28,7 @@ const MaterialTopTabs = withLayoutContext(Navigator);
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   useEffect(() => {
     let channel: any;
@@ -49,6 +51,8 @@ export default function TabLayout() {
           }
 
           if (data) {
+            // Fetch unread messages count
+            fetchUnreadMessages(uid);
             // Filtrar notificaciones duplicadas de seguimiento generadas por trigger viejo
             const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
             setUnreadCount(valid.length);
@@ -76,11 +80,23 @@ export default function TabLayout() {
         fetchUnread();
       });
 
+      // Suscripción Realtime para mensajes
+      const msgChannel = supabase
+        .channel(`unread-msgs-layout-${uid}-${Date.now()}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'mensajes' }, () => {
+          fetchUnreadMessages(uid);
+        })
+        .subscribe();
+
       // Polling cada 10s como fallback por si Realtime no conecta
-      const pollInterval = setInterval(fetchUnread, 10_000);
+      const pollInterval = setInterval(() => {
+        fetchUnread();
+        fetchUnreadMessages(uid);
+      }, 10_000);
 
       return () => {
         if (channel) supabase.removeChannel(channel);
+        supabase.removeChannel(msgChannel);
         eventListener.remove();
         notifCreatedListener.remove();
         clearInterval(pollInterval);
@@ -93,6 +109,35 @@ export default function TabLayout() {
       cleanup.then(clean => clean && clean());
     };
   }, []);
+
+  /** Calcula la cantidad total de mensajes no leídos en todas las conversaciones */
+  const fetchUnreadMessages = async (uid: string) => {
+    try {
+      const { data: messages, error } = await supabase
+        .from('mensajes')
+        .select('id, remitente_id, destinatario_id, created_at')
+        .eq('destinatario_id', uid)
+        .order('created_at', { ascending: false });
+
+      if (error || !messages) return;
+
+      const lastReadRaw = await AsyncStorage.getItem(`last_read_${uid}`);
+      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
+
+      let total = 0;
+      messages.forEach(msg => {
+        const senderId = msg.remitente_id;
+        const lastReadTime = lastRead[senderId];
+        if (!lastReadTime || new Date(msg.created_at) > new Date(lastReadTime)) {
+          total++;
+        }
+      });
+
+      setUnreadMessages(total);
+    } catch (err) {
+      console.error('fetchUnreadMessages exception (layout):', err);
+    }
+  };
 
   return (
     <MaterialTopTabs
@@ -110,7 +155,7 @@ export default function TabLayout() {
         tabBarShowIcon: true,
         tabBarShowLabel: true,
         tabBarLabelStyle: { fontSize: 10, marginTop: 4, textTransform: 'none', fontWeight: '500' },
-        swipeEnabled: true,
+        swipeEnabled: Platform.OS !== 'web',
         lazy: true,
       }}
     >
@@ -118,7 +163,16 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Descubrir',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />,
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+            <View>
+              <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />
+              {unreadMessages > 0 && (
+                <View style={{ position: 'absolute', top: -2, right: -6, backgroundColor: '#1565c0', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
+                  <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
+                </View>
+              )}
+            </View>
+          ),
         }}
       />
       <MaterialTopTabs.Screen

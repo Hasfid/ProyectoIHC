@@ -48,6 +48,8 @@ export default function ProfileScreen() {
   const [recordSubTab, setRecordSubTab] = useState<RecordSubTab>('published');
   const [offlineDrafts, setOfflineDrafts] = useState<DraftRecord[]>([]);
   const [selectingDraft, setSelectingDraft] = useState<DraftRecord | null>(null);
+  const [previewDraftImage, setPreviewDraftImage] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Si viene de Scanner con tab=pending, abrir esa sub-pestaña
   useEffect(() => {
@@ -283,6 +285,8 @@ export default function ProfileScreen() {
     setOfflineDrafts(drafts);
   };
 
+  const hasDraftsToConfirm = offlineDrafts.some(d => d.status === 'pending_selection');
+
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
 
   const confirmDeleteDraft = async () => {
@@ -317,7 +321,8 @@ export default function ProfileScreen() {
   };
 
   const handleSelectCandidate = async (candidate: any) => {
-    if (!selectingDraft) return;
+    if (!selectingDraft || isSubmitting) return;
+    setIsSubmitting(true);
     try {
       await updateDraft(selectingDraft.id, {
         status: 'pending_upload',
@@ -332,15 +337,18 @@ export default function ProfileScreen() {
           descripcion_biologica: candidate.descripcionBiologica,
           curiosidades: candidate.curiosidades,
           mitos: candidate.mitos,
+          all_candidates: (selectingDraft.metadatos_especie as any)?.all_candidates,
         }
       });
       setSelectingDraft(null);
-      // Opcional: intentar sync automático
+      // Intentar sync automático
       syncDrafts();
       Alert.alert('Especie confirmada', 'El registro está listo para subir.');
     } catch (e) {
       console.error(e);
       Alert.alert('Error', 'No se pudo guardar la selección.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -769,11 +777,23 @@ export default function ProfileScreen() {
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.subTab, recordSubTab === 'pending' && styles.subTabActive]}
+                style={[
+                  styles.subTab, 
+                  recordSubTab === 'pending' && styles.subTabActive,
+                  (recordSubTab !== 'pending' && hasDraftsToConfirm) && styles.subTabAttention
+                ]}
                 onPress={() => { setRecordSubTab('pending'); loadOfflineDrafts(); }}
               >
-                <Ionicons name="time-outline" size={16} color={recordSubTab === 'pending' ? '#e65100' : '#888'} />
-                <Text style={[styles.subTabText, recordSubTab === 'pending' && styles.subTabTextActivePending]}>
+                <Ionicons 
+                  name={hasDraftsToConfirm ? "alert-circle" : "time-outline"} 
+                  size={16} 
+                  color={recordSubTab === 'pending' ? '#e65100' : (hasDraftsToConfirm ? '#ef6c00' : '#888')} 
+                />
+                <Text style={[
+                  styles.subTabText, 
+                  recordSubTab === 'pending' && styles.subTabTextActivePending,
+                  (recordSubTab !== 'pending' && hasDraftsToConfirm) && { color: '#ef6c00' }
+                ]}>
                   {i18n.t('profile.pending')} ({offlineDrafts.length})
                 </Text>
               </TouchableOpacity>
@@ -845,7 +865,12 @@ export default function ProfileScreen() {
                   </View>
                 ) : (
                   offlineDrafts.map((draft) => (
-                    <View key={draft.id} style={styles.draftCard}>
+                    <TouchableOpacity 
+                      key={draft.id} 
+                      style={styles.draftCard}
+                      onPress={() => setPreviewDraftImage(draft.media_uri)}
+                      activeOpacity={0.7}
+                    >
                       <Image source={{ uri: draft.media_uri }} style={styles.draftImage} />
                       <View style={styles.draftInfo}>
                         <Text style={styles.draftName} numberOfLines={1}>
@@ -900,7 +925,7 @@ export default function ProfileScreen() {
                           <Ionicons name="trash-outline" size={20} color="#d32f2f" />
                         </TouchableOpacity>
                       </View>
-                    </View>
+                    </TouchableOpacity>
                   ))
                 )}
               </View>
@@ -1148,8 +1173,19 @@ export default function ProfileScreen() {
                   {((selectingDraft.metadatos_especie as any)?.all_candidates || []).map((cand: any, idx: number) => (
                     <TouchableOpacity 
                       key={idx}
-                      style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#f8faf9', padding: 16, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: '#e0e0e0' }}
+                      style={{ 
+                        flexDirection: 'row', 
+                        alignItems: 'center', 
+                        backgroundColor: '#f8faf9', 
+                        padding: 16, 
+                        borderRadius: 16, 
+                        marginBottom: 12, 
+                        borderWidth: 1, 
+                        borderColor: '#e0e0e0',
+                        opacity: isSubmitting ? 0.5 : 1
+                      }}
                       onPress={() => handleSelectCandidate(cand)}
+                      disabled={isSubmitting}
                     >
                       <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#e8f5e9', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
                         <Ionicons name="paw" size={24} color="#2e7d32" />
@@ -1177,6 +1213,31 @@ export default function ProfileScreen() {
             </View>
           </Modal>
         )}
+
+        {/* Modal de Vista Previa del Borrador */}
+        <Modal
+          visible={!!previewDraftImage}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setPreviewDraftImage(null)}
+        >
+          <TouchableOpacity 
+            style={styles.draftPreviewOverlay} 
+            activeOpacity={1} 
+            onPress={() => setPreviewDraftImage(null)}
+          >
+            <View style={styles.draftPreviewCard}>
+              <Image 
+                source={{ uri: previewDraftImage || '' }} 
+                style={styles.draftPreviewImage} 
+              />
+              <View style={styles.draftPreviewHintContainer}>
+                <Ionicons name="eye-outline" size={16} color="rgba(255,255,255,0.7)" />
+                <Text style={styles.draftPreviewHint}>Tocar para cerrar</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        </Modal>
 
         {/* Modal de Confirmación de Borrado */}
         <DeleteConfirmationModal 
@@ -1510,6 +1571,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#eee',
   },
   subTabActive: { backgroundColor: '#e0f2f1', borderColor: '#004d40' },
+  subTabAttention: { backgroundColor: '#fff3e0', borderColor: '#ffb74d' },
   subTabText: { fontSize: 13, fontWeight: '600', color: '#888' },
   subTabTextActive: { color: '#004d40' },
   subTabTextActivePending: { color: '#e65100' },
@@ -1555,6 +1617,53 @@ const styles = StyleSheet.create({
   },
   draftRetryBtn: {
     padding: 8,
+  },
+
+  // Draft preview modal
+  draftPreviewOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  draftPreviewCard: {
+    width: '80%',
+    aspectRatio: 1, // Proporción cuadrada para que sea más equilibrado
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+  },
+  draftPreviewImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  draftPreviewHintContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+    padding: 16,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  draftPreviewHint: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 });
 

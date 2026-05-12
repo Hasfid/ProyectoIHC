@@ -345,6 +345,14 @@ export default function RecordsScreen() {
         <BlurView intensity={90} tint="dark" style={styles.modalOverlay}>
           {selectedRecord && (
             <View style={styles.folderModal}>
+              {/* Botón de retroceso en esquina superior izquierda */}
+              <TouchableOpacity 
+                style={styles.backButton} 
+                onPress={() => setSelectedRecord(null)}
+              >
+                <Ionicons name="arrow-back" size={24} color="#a4ff44" />
+              </TouchableOpacity>
+
               {/* Pestaña de Carpeta */}
               <View style={styles.folderTab}>
                 <Ionicons name="folder-open" size={20} color="#a4ff44" />
@@ -720,6 +728,20 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 0,
     borderTopRightRadius: 20,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(164, 255, 68, 0.2)',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 8,
+    left: 12,
+    zIndex: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(164, 255, 68, 0.2)',
   },

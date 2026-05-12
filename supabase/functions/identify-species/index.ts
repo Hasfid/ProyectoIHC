@@ -75,19 +75,19 @@ Estructura del JSON obligatorio:
       throw new Error("Missing GEMINI_API_KEY en variables de entorno de Supabase.");
     }
 
-    const endpoint = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
         {
           parts: [
             { text: SYSTEM_PROMPT },
-            { inline_data: { mime_type: 'image/jpeg', data: base64Image } },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Image } },
           ],
         },
       ],
       generationConfig: {
-        responseMimeType: "application/json"
+        response_mime_type: "application/json"
       }
     };
 
