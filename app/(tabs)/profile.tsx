@@ -14,6 +14,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Image,
@@ -65,6 +66,13 @@ export default function ProfileScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
   const [candidateCounts, setCandidateCounts] = useState<Record<string, number>>({});
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem('theme').then((t) => {
+      if (t === 'dark') setIsDarkMode(true);
+    });
+  }, []);
 
   useEffect(() => {
     const metadatos = selectingDraft?.metadatos_especie as any;
@@ -687,37 +695,41 @@ export default function ProfileScreen() {
 
 
   return (
-    <View style={styles.container}>
-      <View style={styles.customHeader}>
-        <Text style={styles.customHeaderTitle}>{i18n.t('profile.title')}</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/notifications')}>
-            <View>
-              <Ionicons name="notifications-outline" size={28} color="#111" />
-              {unreadCount > 0 && (
-                <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
-                  <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.menuButton} onPress={() => setSettingsVisible(true)}>
-            <Ionicons name="menu-outline" size={32} color="#111" />
-          </TouchableOpacity>
-        </View>
+    <View style={[styles.container, { backgroundColor: isDarkMode ? '#000000' : '#ffffff' }]}>
+      <View style={[styles.customHeader, { backgroundColor: isDarkMode ? '#000000' : '#ffffff' }]}>
+        <Text style={[styles.customHeaderTitle, isDarkMode && { color: '#ffffff' }]}>{i18n.t('profile.title')}</Text>
+        {Platform.OS !== 'web' && (
+          <View style={styles.headerActions}>
+            <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/notifications')}>
+              <View>
+                <Ionicons name="notifications-outline" size={28} color={isDarkMode ? "#ffffff" : "#111"} />
+                {unreadCount > 0 && (
+                  <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
+                    <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuButton} onPress={() => setSettingsVisible(true)}>
+              <Ionicons name="menu-outline" size={32} color={isDarkMode ? "#ffffff" : "#111"} />
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.headerContainer}>
-          <TouchableOpacity onPress={openEditModal} activeOpacity={0.8}>
-            {hasPhoto ? (
-              <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
-            ) : (
-              <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
-                <Ionicons name="person" size={50} color="#ccc" />
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={{ position: 'relative' }}>
+            <TouchableOpacity onPress={openEditModal} activeOpacity={0.8}>
+              {hasPhoto ? (
+                <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
+              ) : (
+                <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+                  <Ionicons name="person" size={50} color="#ccc" />
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
@@ -1149,6 +1161,24 @@ export default function ProfileScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' }} 
+              onPress={() => {
+                const isDark = isDarkMode;
+                setIsDarkMode(!isDark);
+                // Also toggle body bg if web
+                if (Platform.OS === 'web') {
+                  document.body.style.backgroundColor = !isDark ? '#000' : '#fff';
+                }
+                AsyncStorage.setItem('theme', !isDark ? 'dark' : 'light');
+              }}
+            >
+              <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={24} color="#111" style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16 }}>
+                {isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
               style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15 }} 
               onPress={() => {
                 setSettingsVisible(false);
@@ -1303,8 +1333,8 @@ function DeleteConfirmationModal({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
   customHeader: {
-    paddingTop: 60, paddingHorizontal: 20, paddingBottom: 10,
-    backgroundColor: 'transparent', position: 'absolute', top: 0, left: 0, right: 0,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20, paddingHorizontal: 20, paddingBottom: 10,
+    backgroundColor: '#ffffff', position: 'absolute', top: 0, left: 0, right: 0,
     zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
   },
   customHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: '#111' },

@@ -5,7 +5,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, Text } from 'react-native';
+import { StyleSheet, View, TouchableOpacity, Text, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
@@ -68,18 +68,20 @@ export default function DiscoverScreen() {
 
       <WeatherWidget />
 
-      <View style={styles.floatingButtonContainer}>
-        <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
-          <BlurView intensity={90} tint="light" style={styles.blurContainer}>
-            <Ionicons name="chatbubbles" size={28} color="#004d40" style={styles.icon} />
-          </BlurView>
-        </TouchableOpacity>
-        {unreadMessages > 0 && (
-          <View style={styles.chatBadge}>
-            <Text style={styles.chatBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
-          </View>
-        )}
-      </View>
+      {Platform.OS !== 'web' && (
+        <View style={styles.floatingButtonContainer}>
+          <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
+            <BlurView intensity={90} tint="light" style={styles.blurContainer}>
+              <Ionicons name="chatbubbles" size={28} color="#004d40" style={styles.icon} />
+            </BlurView>
+          </TouchableOpacity>
+          {unreadMessages > 0 && (
+            <View style={styles.chatBadge}>
+              <Text style={styles.chatBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
+            </View>
+          )}
+        </View>
+      )}
     </View>
   );
 }

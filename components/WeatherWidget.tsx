@@ -27,13 +27,21 @@ export default function WeatherWidget() {
 
   const loadWeather = async () => {
     try {
+      let lat = 8.3146; // Ciudad Guayana fallback
+      let lon = -62.7118;
+      
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLoading(false);
-        return;
+      if (status === 'granted') {
+        try {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+          lat = loc.coords.latitude;
+          lon = loc.coords.longitude;
+        } catch (e) {
+          console.warn('Could not get precise location, using fallback');
+        }
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      const result = await fetchWeather(loc.coords.latitude, loc.coords.longitude);
+      
+      const result = await fetchWeather(lat, lon);
       setData(result);
     } catch (err) {
       console.warn('WeatherWidget error:', err);
@@ -115,8 +123,8 @@ export default function WeatherWidget() {
 const s = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 40,
-    left: 12,
+    bottom: Platform.OS === 'web' ? 40 : 40,
+    left: Platform.OS === 'web' ? 16 : 12,
     zIndex: 20,
   },
   chip: {

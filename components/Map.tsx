@@ -150,7 +150,7 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
         {/* ── Máscara: oscurece el mundo excepto la Guayana ── */}
         <Polygon
           coordinates={WORLD_REGION}
-          holes={[GUAYANA_REGION.slice().reverse()]}
+          holes={[GUAYANA_REGION]}
           fillColor="rgba(0, 0, 0, 0.55)"
           strokeColor="rgba(0, 0, 0, 0)"
         />

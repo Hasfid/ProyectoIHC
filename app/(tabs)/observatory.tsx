@@ -257,7 +257,7 @@ export default function ObservatoryScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.customHeader}>
+      <View style={[styles.customHeader, { backgroundColor: '#f9fafb' }]}>
         <Text style={styles.customHeaderTitle}>Observatorio</Text>
       </View>
       <ScrollView
@@ -270,13 +270,12 @@ export default function ObservatoryScreen() {
         {/* Transmisión en Vivo */}
         <Text style={styles.sectionTitle}>Transmisión en Vivo</Text>
         <View style={styles.liveCameraFrame}>
-          {/* Video desactivado temporalmente
           {Platform.OS === 'web' ? (
             <video
               src={LIVE_VIDEO_URL}
               autoPlay
+              controls
               muted
-              loop
               playsInline
               crossOrigin="anonymous"
               style={{ 
@@ -292,22 +291,15 @@ export default function ObservatoryScreen() {
               style={styles.liveCameraImage}
               resizeMode={ResizeMode.COVER}
               shouldPlay
-              isMuted
+              isMuted={true}
+              useNativeControls
               isLooping
             />
           )}
-          */}
-          
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-            <Ionicons name="videocam-off-outline" size={48} color="#6d4c41" />
-            <Text style={{ color: '#8d6e63', marginTop: 8, fontSize: 14, fontWeight: '600' }}>
-              Transmisión pausada temporalmente
-            </Text>
-          </View>
 
-          <View style={[styles.liveBadge, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
-            <View style={[styles.liveDot, { backgroundColor: '#999' }]} />
-            <Text style={styles.liveText}>OFFLINE</Text>
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveText}>EN VIVO</Text>
           </View>
         </View>
 
@@ -445,10 +437,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   customHeader: {
-    paddingTop: 60,
+    paddingTop: Platform.OS === 'ios' ? 40 : 20,
     paddingHorizontal: 20,
     paddingBottom: 10,
-    backgroundColor: 'transparent',
+    backgroundColor: '#f9fafb',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
     flexDirection: 'row',
     alignItems: 'center',
     position: 'absolute',
@@ -476,7 +470,7 @@ const styles = StyleSheet.create({
   },
   liveCameraFrame: {
     width: '100%',
-    height: 220,
+    height: Platform.OS === 'web' ? 400 : 220,
     backgroundColor: '#3e2723',
     borderRadius: 16,
     borderWidth: 6,

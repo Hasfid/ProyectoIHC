@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
@@ -94,23 +94,24 @@ export default function LoginScreen() {
       style={styles.container} 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Gradient background simulated with layered views */}
-      <View style={styles.gradientBackground}>
-        <View style={styles.gradientLayer1} />
-        <View style={styles.gradientLayer2} />
-      </View>
-
-      {/* Logo / Top Section */}
-      <View style={styles.topSection}>
-        <View style={styles.logoPlaceholder}>
-          <Ionicons name="leaf" size={48} color="#FFFFFF" />
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* Gradient background simulated with layered views */}
+        <View style={styles.gradientBackground}>
+          <View style={styles.gradientLayer1} />
+          <View style={styles.gradientLayer2} />
         </View>
-        <Text style={styles.logoText}>Ecos</Text>
-        <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
-      </View>
 
-      {/* White card */}
-      <View style={styles.card}>
+        {/* Logo / Top Section */}
+        <View style={styles.topSection}>
+          <View style={styles.logoPlaceholder}>
+            <Ionicons name="leaf" size={48} color="#FFFFFF" />
+          </View>
+          <Text style={styles.logoText}>Ecos</Text>
+          <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
+        </View>
+
+        {/* White card */}
+        <View style={styles.card}>
         <Text style={styles.title}>Iniciar Sesión</Text>
 
         {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
@@ -182,14 +183,14 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Footer */}
-        <View style={styles.footerRow}>
-          <Text style={styles.footerText}>¿No tienes cuenta? </Text>
-          <TouchableOpacity onPress={() => router.push('/register')}>
-            <Text style={styles.linkText}>Crear cuenta</Text>
-          </TouchableOpacity>
+          <View style={styles.footerRow}>
+            <Text style={styles.footerText}>¿No tienes cuenta? </Text>
+            <TouchableOpacity onPress={() => router.push('/register')}>
+              <Text style={styles.linkText}>Crear cuenta</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -225,8 +226,8 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 20,
-    minHeight: 180,
+    paddingTop: 80,
+    minHeight: 280,
   },
   logoPlaceholder: {
     width: 80,

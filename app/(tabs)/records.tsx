@@ -234,16 +234,13 @@ export default function RecordsScreen() {
   const renderFilterChip = (type: FilterType) => {
     const isSelected = filter === type;
     return (
-      <TouchableOpacity onPress={() => setFilter(type)}>
-        <BlurView 
-          intensity={isSelected ? 60 : 30} 
-          tint={isSelected ? 'light' : 'dark'}
-          style={[styles.chip, isSelected && styles.chipSelected]}
-        >
-          <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-            {type}
-          </Text>
-        </BlurView>
+      <TouchableOpacity 
+        onPress={() => setFilter(type)}
+        style={[styles.chip, isSelected && styles.chipSelected]}
+      >
+        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
+          {type}
+        </Text>
       </TouchableOpacity>
     );
   };
@@ -284,17 +281,13 @@ export default function RecordsScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Background Decorativo "Crystal-Tech" */}
-      <View style={styles.bgBlob1} />
-      <View style={styles.bgBlob2} />
-
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Registros</Text>
-        <Text style={styles.headerSubtitle}>Tus descubrimientos en la Guayana</Text>
+        <Text style={styles.headerSubtitle}>Descubrimientos de los usuarios</Text>
       </View>
 
       <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="rgba(164, 255, 68, 0.5)" style={styles.searchIcon} />
+        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
           placeholder="Buscar especie o nombre..."
@@ -530,15 +523,7 @@ export default function RecordsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#051310',
-  },
-  bgBlob1: {
-    position: 'absolute', top: -100, right: -50, width: 300, height: 300,
-    backgroundColor: 'rgba(0, 77, 64, 0.3)', borderRadius: 150, filter: 'blur(50px)',
-  },
-  bgBlob2: {
-    position: 'absolute', bottom: -50, left: -100, width: 250, height: 250,
-    backgroundColor: 'rgba(164, 255, 68, 0.1)', borderRadius: 125, filter: 'blur(40px)',
+    backgroundColor: '#fff',
   },
   header: {
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
@@ -546,27 +531,27 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerTitle: {
-    fontSize: 28, fontWeight: '800', color: '#fff', letterSpacing: 0.5,
+    fontSize: 28, fontWeight: '800', color: '#111', letterSpacing: 0.5,
   },
-  headerSubtitle: { color: 'rgba(164, 255, 68, 0.7)', fontSize: 14, fontWeight: '500' },
+  headerSubtitle: { color: '#555', fontSize: 16, fontWeight: '500', marginTop: 4 },
   
   // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#f5f5f5',
     marginHorizontal: 20,
     borderRadius: 12,
     paddingHorizontal: 12,
     height: 46,
     borderWidth: 1,
-    borderColor: 'rgba(164, 255, 68, 0.1)',
+    borderColor: 'transparent',
     marginBottom: 16,
   },
   searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
-    color: '#fff',
+    color: '#111',
     fontSize: 15,
   },
 
@@ -578,16 +563,16 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#f5f5f5',
   },
   chipSelected: {
-    borderColor: '#a4ff44',
+    backgroundColor: '#e8f5e9',
   },
   chipText: {
-    color: '#aaa', fontSize: 13, fontWeight: '600',
+    color: '#888', fontSize: 13, fontWeight: '600',
   },
   chipTextSelected: {
-    color: '#fff',
+    color: '#2e7d32',
   },
   loadingContainer: {
     flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12,

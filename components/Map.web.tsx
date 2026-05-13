@@ -225,9 +225,9 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
       import('react-leaflet'),
       import('leaflet'),
     ]).then(([reactLeaflet, L]) => {
-      const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents } = reactLeaflet;
+      const { MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl, useMap, useMapEvents } = reactLeaflet;
       setMapComponents({
-        MapContainer, TileLayer, Marker, Popup, Polygon,
+        MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl,
         useMap, useMapEvents,
         L: L.default || L,
       });
@@ -259,7 +259,7 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
     );
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl, useMap, useMapEvents, L } = MapComponents;
 
   // ── Sub-componentes internos ───────────────────────────────────────────────
 
@@ -369,76 +369,16 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
   return (
     <View style={styles.container}>
 
-      {/* ── Header HUD flotante ── */}
-      <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '10px 16px',
-        background: 'rgba(0,0,0,0.40)',
-        backdropFilter: 'blur(8px)',
-        WebkitBackdropFilter: 'blur(8px)',
-        borderBottom: '1px solid rgba(52,211,153,0.25)',
-        pointerEvents: 'none',
-      }}>
-        {/* Logo + título */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: '50%',
-            background: 'rgba(52,211,153,0.2)',
-            border: '1px solid rgba(52,211,153,0.5)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 16,
-          }}>🌿</div>
-          <div>
-            <div style={{
-              color: '#fff',
-              fontSize: 14,
-              fontWeight: 700,
-              fontFamily: 'ui-monospace, monospace',
-              letterSpacing: '2px',
-              textTransform: 'uppercase',
-              lineHeight: 1.2,
-            }}>Eco-Guayana</div>
-            <div style={{
-              color: '#34d399',
-              fontSize: 9,
-              fontFamily: 'ui-monospace, monospace',
-              letterSpacing: '1.5px',
-              textTransform: 'uppercase',
-            }}>Zonas de Avistamiento</div>
-          </div>
-        </div>
-
-        {/* Indicador de estado */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: '50%',
-            background: '#34d399',
-            boxShadow: '0 0 6px #34d399',
-          }} />
-          <span style={{
-            color: 'rgba(255,255,255,0.7)',
-            fontSize: 9,
-            fontFamily: 'ui-monospace, monospace',
-            letterSpacing: '1px',
-          }}>LIVE</span>
-        </div>
-      </div>
-
       <MapContainer
         center={MAP_CENTER_START}
         zoom={MAP_ZOOM_START}
         maxZoom={18}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
-        zoomControl={true}
+        zoomControl={false}
       >
+        <ZoomControl position="bottomright" />
+
         {/* Animación de entrada flyTo */}
         <IntroFlyTo />
 

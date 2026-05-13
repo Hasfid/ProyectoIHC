@@ -21,6 +21,7 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [username, setUsername] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({ email: '', username: '', password: '', confirmPassword: '', general: '' });
 
@@ -136,48 +137,73 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView 
       style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-        <View style={styles.topSection}>
-          <Text style={styles.logoText}>Ecos</Text>
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* Gradient background simulated with layered views */}
+        <View style={styles.gradientBackground}>
+          <View style={styles.gradientLayer1} />
+          <View style={styles.gradientLayer2} />
         </View>
 
-        <View style={styles.bottomSection}>
+        {/* Logo / Top Section */}
+        <View style={styles.topSection}>
+          <View style={styles.logoPlaceholder}>
+            <Ionicons name="leaf" size={48} color="#FFFFFF" />
+          </View>
+          <Text style={styles.logoText}>Ecos</Text>
+          <Text style={styles.subtitleText}>Únete a la red</Text>
+        </View>
+
+        {/* White card */}
+        <View style={styles.card}>
           <Text style={styles.title}>Crear Cuenta</Text>
 
           {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
 
+          {/* Email */}
           <Text style={styles.label}>Correo Electrónico</Text>
-          <TextInput
-            style={[styles.input, errors.email ? styles.inputError : null]}
-            placeholder="tu@correo.com"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            maxLength={60}
-            value={email}
-            onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
-            onSubmitEditing={handleRegister}
-          />
+          <View style={[styles.inputContainer, errors.email ? styles.inputError : null]}>
+            <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="tu@correo.com"
+              placeholderTextColor="#AAAAAA"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              maxLength={60}
+              value={email}
+              onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
+              onSubmitEditing={handleRegister}
+            />
+          </View>
           {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
+          {/* Username */}
           <Text style={styles.label}>Nombre de Usuario</Text>
-          <TextInput
-            style={[styles.input, errors.username ? styles.inputError : null]}
-            placeholder="ej: carlos_botanico"
-            autoCapitalize="none"
-            maxLength={15}
-            value={username}
-            onChangeText={(text) => { setUsername(text); setErrors({...errors, username: '', general: ''}); }}
-            onSubmitEditing={handleRegister}
-          />
+          <View style={[styles.inputContainer, errors.username ? styles.inputError : null]}>
+            <Ionicons name="person-outline" size={20} color="#999" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="ej: carlos_botanico"
+              placeholderTextColor="#AAAAAA"
+              autoCapitalize="none"
+              maxLength={15}
+              value={username}
+              onChangeText={(text) => { setUsername(text); setErrors({...errors, username: '', general: ''}); }}
+              onSubmitEditing={handleRegister}
+            />
+          </View>
           {errors.username ? <Text style={styles.errorText}>{errors.username}</Text> : null}
 
+          {/* Password */}
           <Text style={styles.label}>Contraseña</Text>
           <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
+            <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
             <TextInput
               style={styles.passwordInput}
               placeholder="Mínimo 8 caracteres"
+              placeholderTextColor="#AAAAAA"
               secureTextEntry={!showPassword}
               maxLength={30}
               value={password}
@@ -185,22 +211,27 @@ export default function RegisterScreen() {
               onSubmitEditing={handleRegister}
             />
             <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Ionicons name={showPassword ? "eye-off" : "eye"} size={24} color="#888" />
+              <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#999" />
             </TouchableOpacity>
           </View>
           {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
           <Text style={styles.label}>Confirmar Contraseña</Text>
           <View style={[styles.passwordContainer, errors.confirmPassword ? styles.inputError : null]}>
+            <Ionicons name="checkmark-circle-outline" size={20} color="#999" style={styles.inputIcon} />
             <TextInput
               style={styles.passwordInput}
               placeholder="Repite tu contraseña"
-              secureTextEntry={!showPassword}
+              placeholderTextColor="#AAAAAA"
+              secureTextEntry={!showConfirmPassword}
               maxLength={30}
               value={confirmPassword}
               onChangeText={(text) => { setConfirmPassword(text); setErrors({...errors, confirmPassword: '', general: ''}); }}
               onSubmitEditing={handleRegister}
             />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeIcon}>
+              <Ionicons name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#999" />
+            </TouchableOpacity>
           </View>
           {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
 
@@ -227,115 +258,181 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#2D5A27',
+  },
+  gradientBackground: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  gradientLayer1: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#2D5A27',
+  },
+  gradientLayer2: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: '60%',
+    backgroundColor: '#4A7C3F',
+    opacity: 0.5,
+    borderTopLeftRadius: 200,
+    borderTopRightRadius: 200,
   },
   topSection: {
-    height: 200,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
+    paddingTop: 80,
+    minHeight: 280,
+  },
+  logoPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   logoText: {
-    fontSize: 54,
+    fontSize: 42,
     fontWeight: '900',
-    color: '#2e7d32',
-    letterSpacing: 2,
+    color: '#FFFFFF',
+    letterSpacing: 3,
   },
-  bottomSection: {
-    flex: 1,
-    padding: 24,
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+  subtitleText: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
+    letterSpacing: 1.5,
+    fontWeight: '500',
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 28,
+    paddingTop: 32,
+    paddingBottom: 36,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 12,
   },
   title: {
-    fontSize: 26,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '700',
     marginBottom: 24,
-    color: '#111',
+    color: '#333333',
+    textAlign: 'center',
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     marginBottom: 8,
     fontWeight: '600',
-    color: '#444',
+    color: '#555555',
+    marginLeft: 4,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
+  },
+  inputIcon: {
+    paddingLeft: 14,
+    paddingRight: 4,
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 20,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    color: '#333333',
   },
   inputError: {
     borderColor: '#d32f2f',
-    backgroundColor: '#fff5f5',
+    backgroundColor: '#FFF5F5',
   },
   errorText: {
     color: '#d32f2f',
     fontSize: 12,
-    marginTop: -15,
-    marginBottom: 15,
-    marginLeft: 4,
+    marginTop: -10,
+    marginBottom: 12,
+    marginLeft: 8,
   },
   errorTextGeneral: {
     color: '#d32f2f',
     fontSize: 14,
-    marginBottom: 15,
+    marginBottom: 16,
     textAlign: 'center',
-    fontWeight: 'bold',
+    fontWeight: '600',
+    backgroundColor: '#FFF5F5',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    overflow: 'hidden',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
+    backgroundColor: '#F5F5F5',
     borderRadius: 12,
-    marginBottom: 20,
-    backgroundColor: '#fafafa',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#EEEEEE',
   },
   passwordInput: {
     flex: 1,
-    padding: 14,
-    fontSize: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    color: '#333333',
   },
   eyeIcon: {
-    padding: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
   },
   button: {
-    backgroundColor: '#2e7d32',
-    padding: 16,
-    borderRadius: 12,
+    backgroundColor: '#1B5E20',
+    paddingVertical: 14,
+    borderRadius: 25,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
+    shadowColor: '#1B5E20',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   buttonDisabled: {
-    backgroundColor: '#a5d6a7',
+    backgroundColor: '#A5D6A7',
+    shadowOpacity: 0,
+    elevation: 0,
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
-    marginTop: 24,
+    marginTop: 20,
   },
   footerText: {
-    color: '#555',
-    fontSize: 15,
+    color: '#888888',
+    fontSize: 14,
   },
   linkText: {
-    color: '#2e7d32',
-    fontSize: 15,
-    fontWeight: 'bold',
+    color: '#2D5A27',
+    fontSize: 14,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });
