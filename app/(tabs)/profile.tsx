@@ -36,6 +36,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { uploadMediaToSupabase } from '../../lib/uploadMedia';
 import { getDrafts, deleteDraft, syncDrafts, updateDraft, DraftRecord, DRAFTS_UPDATED_EVENT, NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
 import { i18n, changeLanguage } from '../../lib/i18n';
+import { useTheme } from '../../lib/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -66,13 +67,8 @@ export default function ProfileScreen() {
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
   const [candidateCounts, setCandidateCounts] = useState<Record<string, number>>({});
-  const [isDarkMode, setIsDarkMode] = useState(false);
-
-  useEffect(() => {
-    AsyncStorage.getItem('theme').then((t) => {
-      if (t === 'dark') setIsDarkMode(true);
-    });
-  }, []);
+  const { theme, toggleTheme } = useTheme();
+  const isDarkMode = theme.mode === 'dark';
 
   useEffect(() => {
     const metadatos = selectingDraft?.metadatos_especie as any;
@@ -443,8 +439,37 @@ export default function ProfileScreen() {
       .order('created_at', { ascending: false })
       .order('id', { ascending: false }); // Tie-breaker
 
-    if (!error && data) {
-      setUserPosts(data);
+    if (!error && data && data.length > 0) {
+      const postIds = data.map(p => p.id);
+
+      const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+        supabase.from('post_likes').select('publicacion_id, usuario_id').in('publicacion_id', postIds),
+        supabase.from('post_comments').select('publicacion_id').in('publicacion_id', postIds),
+      ]);
+
+      const likeCounts = new Map<string, number>();
+      const commentCounts = new Map<string, number>();
+      const likedByMe = new Set<string>();
+
+      (likesData || []).forEach((like: any) => {
+        likeCounts.set(like.publicacion_id, (likeCounts.get(like.publicacion_id) || 0) + 1);
+        if (userId && like.usuario_id === userId) likedByMe.add(like.publicacion_id);
+      });
+
+      (commentsData || []).forEach((c: any) => {
+        commentCounts.set(c.publicacion_id, (commentCounts.get(c.publicacion_id) || 0) + 1);
+      });
+
+      const enriched = data.map(post => ({
+        ...post,
+        likesCount: likeCounts.get(post.id) ?? 0,
+        commentsCount: commentCounts.get(post.id) ?? 0,
+        likedByMe: likedByMe.has(post.id),
+      }));
+
+      setUserPosts(enriched);
+    } else {
+      setUserPosts(data || []);
     }
   };
 
@@ -558,6 +583,115 @@ export default function ProfileScreen() {
   };
 
   // --- Funciones de Comunidad ---
+  const [profileCommentInputs, setProfileCommentInputs] = useState<Record<string, string>>({});
+  const [profileActiveComment, setProfileActiveComment] = useState<string | null>(null);
+  const [profileSubmittingComment, setProfileSubmittingComment] = useState<string | null>(null);
+  const [postComments, setPostComments] = useState<Record<string, any[]>>({});
+
+  const handleToggleLikeProfile = async (postId: string) => {
+    if (!session?.user?.id) return;
+    const post = userPosts.find(p => p.id === postId);
+    if (!post) return;
+
+    try {
+      if (post.likedByMe) {
+        await supabase.from('post_likes').delete()
+          .eq('publicacion_id', postId)
+          .eq('usuario_id', session.user.id);
+      } else {
+        await supabase.from('post_likes').insert({
+          publicacion_id: postId,
+          usuario_id: session.user.id,
+        });
+      }
+      setUserPosts(current =>
+        current.map(item =>
+          item.id === postId
+            ? { ...item, likedByMe: !item.likedByMe, likesCount: item.likesCount + (item.likedByMe ? -1 : 1) }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error('Error toggling like:', err);
+    }
+  };
+
+  const handleSubmitCommentProfile = async (postId: string) => {
+    const text = (profileCommentInputs[postId] || '').trim();
+    if (!text || !session?.user?.id) return;
+
+    setProfileSubmittingComment(postId);
+    try {
+      const { error } = await supabase.from('post_comments').insert({
+        publicacion_id: postId,
+        usuario_id: session.user.id,
+        comentario: text,
+      });
+      if (error) throw error;
+
+      setProfileCommentInputs(prev => ({ ...prev, [postId]: '' }));
+      // Actualizar conteo local
+      setUserPosts(current =>
+        current.map(item =>
+          item.id === postId ? { ...item, commentsCount: (item.commentsCount || 0) + 1 } : item
+        )
+      );
+      // Recargar comentarios del post
+      fetchPostComments(postId);
+    } catch (err) {
+      console.error('Error adding comment:', err);
+      Alert.alert('Error', 'No se pudo enviar el comentario.');
+    } finally {
+      setProfileSubmittingComment(null);
+    }
+  };
+
+  const fetchPostComments = async (postId: string) => {
+    const { data, error } = await supabase
+      .from('post_comments')
+      .select('*')
+      .eq('publicacion_id', postId)
+      .order('created_at', { ascending: true });
+
+    if (!error && data) {
+      // Obtener perfiles de los autores
+      const authorIds = [...new Set(data.map(c => c.usuario_id))];
+      const { data: profiles } = await supabase.from('perfiles').select('id, username, nombre, foto_perfil').in('id', authorIds);
+      const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+      const enriched = data.map(c => ({
+        ...c,
+        perfil: profileMap.get(c.usuario_id) || { username: 'Usuario', nombre: 'Usuario', foto_perfil: null },
+      }));
+      setPostComments(prev => ({ ...prev, [postId]: enriched }));
+    }
+  };
+
+  const toggleCommentSection = (postId: string) => {
+    if (profileActiveComment === postId) {
+      setProfileActiveComment(null);
+    } else {
+      setProfileActiveComment(postId);
+      if (!postComments[postId]) {
+        fetchPostComments(postId);
+      }
+    }
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMin < 1) return 'Justo ahora';
+    if (diffMin < 60) return `Hace ${diffMin} min`;
+    if (diffHrs < 24) return `Hace ${diffHrs}h`;
+    if (diffDays < 7) return `Hace ${diffDays}d`;
+    return date.toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });
+  };
+
   const handleDeletePost = (postId: string) => {
     Alert.alert(
       'Eliminar publicación',
@@ -683,8 +817,8 @@ export default function ProfileScreen() {
 
   if (loading || !profile) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#2e7d32" />
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }]}> 
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
@@ -695,14 +829,14 @@ export default function ProfileScreen() {
 
 
   return (
-    <View style={[styles.container, { backgroundColor: isDarkMode ? '#000000' : '#ffffff' }]}>
-      <View style={[styles.customHeader, { backgroundColor: isDarkMode ? '#000000' : '#ffffff' }]}>
-        <Text style={[styles.customHeaderTitle, isDarkMode && { color: '#ffffff' }]}>{i18n.t('profile.title')}</Text>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.customHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <Text style={[styles.customHeaderTitle, { color: theme.text }]}>{i18n.t('profile.title')}</Text>
         {Platform.OS !== 'web' && (
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/notifications')}>
               <View>
-                <Ionicons name="notifications-outline" size={28} color={isDarkMode ? "#ffffff" : "#111"} />
+                <Ionicons name="notifications-outline" size={28} color={theme.text} />
                 {unreadCount > 0 && (
                   <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
                     <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
@@ -711,7 +845,7 @@ export default function ProfileScreen() {
               </View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuButton} onPress={() => setSettingsVisible(true)}>
-              <Ionicons name="menu-outline" size={32} color={isDarkMode ? "#ffffff" : "#111"} />
+              <Ionicons name="menu-outline" size={32} color={theme.text} />
             </TouchableOpacity>
           </View>
         )}
@@ -724,8 +858,8 @@ export default function ProfileScreen() {
               {hasPhoto ? (
                 <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
               ) : (
-                <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
-                  <Ionicons name="person" size={50} color="#ccc" />
+                <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: theme.inputBackground }]}>
+                  <Ionicons name="person" size={50} color={theme.muted} />
                 </View>
               )}
             </TouchableOpacity>
@@ -733,48 +867,48 @@ export default function ProfileScreen() {
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{stats.records}</Text>
-              <Text style={styles.statLabel}>{i18n.t('profile.records')}</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.records}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.records')}</Text>
             </View>
             <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'followers' } })}>
-              <Text style={styles.statNumber}>{stats.followers}</Text>
-              <Text style={styles.statLabel}>{i18n.t('profile.followers')}</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.followers}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.followers')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.statItem} onPress={() => router.push({ pathname: '/social', params: { userId: session?.user?.id, tab: 'following' } })}>
-              <Text style={styles.statNumber}>{stats.following}</Text>
-              <Text style={styles.statLabel}>{i18n.t('profile.following')}</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.following}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.following')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.infoContainer}>
-          <Text style={styles.fullName}>{profile.username || profile.nombre}</Text>
-          <Text style={styles.description}>{profile.descripcion || 'Sin descripción.'}</Text>
+          <Text style={[styles.fullName, { color: theme.text }]}>{profile.username || profile.nombre}</Text>
+          <Text style={[styles.description, { color: theme.subtext }]}>{profile.descripcion || 'Sin descripción.'}</Text>
         </View>
 
         <View style={styles.actionsContainer}>
-          <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
-            <Text style={styles.editButtonText}>{i18n.t('profile.editProfile')}</Text>
+          <TouchableOpacity style={[styles.editButton, { backgroundColor: theme.inputBackground }, theme.mode === 'dark' && { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }]} onPress={openEditModal}>
+            <Text style={[styles.editButtonText, { color: theme.text }]}>{i18n.t('profile.editProfile')}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.editButton} onPress={() => router.push({ pathname: '/social', params: { tab: 'discover' } })}>
-            <Text style={styles.editButtonText}>{i18n.t('social.discover')}</Text>
+          <TouchableOpacity style={[styles.editButton, { backgroundColor: theme.inputBackground }, theme.mode === 'dark' && { borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' }]} onPress={() => router.push({ pathname: '/social', params: { tab: 'discover' } })}>
+            <Text style={[styles.editButtonText, { color: theme.text }]}>{i18n.t('social.discover')}</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.tabsContainer}>
+        <View style={[styles.tabsContainer, { borderTopColor: theme.border }]}>
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'records' && styles.activeTab]} 
+            style={[styles.tab, activeTab === 'records' && [styles.activeTab, { borderBottomColor: theme.text }]]} 
             onPress={() => setActiveTab('records')}
           >
-            <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? '#111' : '#888'} />
-            <Text style={[styles.tabText, activeTab === 'records' && styles.activeTabText]}>{i18n.t('profile.tabRecords')}</Text>
+            <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? theme.text : theme.muted} />
+            <Text style={[styles.tabText, { color: theme.muted }, activeTab === 'records' && { color: theme.text }]}>{i18n.t('profile.tabRecords')}</Text>
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'community' && styles.activeTab]} 
+            style={[styles.tab, activeTab === 'community' && [styles.activeTab, { borderBottomColor: theme.text }]]} 
             onPress={() => setActiveTab('community')}
           >
-            <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? '#111' : '#888'} />
-            <Text style={[styles.tabText, activeTab === 'community' && styles.activeTabText]}>{i18n.t('profile.tabCommunity')}</Text>
+            <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? theme.text : theme.muted} />
+            <Text style={[styles.tabText, { color: theme.muted }, activeTab === 'community' && { color: theme.text }]}>{i18n.t('profile.tabCommunity')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -961,17 +1095,81 @@ export default function ProfileScreen() {
           ) : (
             <View style={styles.postsListContainer}>
               {userPosts.map((post) => (
-                <View key={post.id} style={styles.postCard}>
+                <View key={post.id} style={[styles.postCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                   <View style={styles.postCardHeader}>
-                    <Text style={styles.postCardTitle}>{post.titulo}</Text>
+                    <Text style={[styles.postCardTitle, { color: theme.text }]}>{post.titulo}</Text>
                     <TouchableOpacity onPress={() => handleDeletePost(post.id)}>
                       <Ionicons name="trash-outline" size={20} color="#d32f2f" />
                     </TouchableOpacity>
                   </View>
-                  <Text style={styles.postCardDesc}>{post.descripcion}</Text>
-                  <Text style={styles.postCardDate}>
+                  <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  <Text style={[styles.postCardDate, { color: theme.muted }]}>
                     {new Date(post.created_at).toLocaleDateString('es-VE')}
                   </Text>
+
+                  {/* Like y Comentario */}
+                  <View style={[styles.postActionsRow, { borderTopColor: theme.border }]}>
+                    <TouchableOpacity
+                      style={[styles.postActionBtn, post.likedByMe && styles.postActionBtnActive]}
+                      onPress={() => handleToggleLikeProfile(post.id)}
+                    >
+                      <Ionicons name={post.likedByMe ? 'heart' : 'heart-outline'} size={18} color={post.likedByMe ? '#ec4899' : theme.muted} />
+                      <Text style={[styles.postActionText, { color: theme.subtext }, post.likedByMe && { color: '#ec4899' }]}>{post.likesCount || 0}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.postActionBtn}
+                      onPress={() => toggleCommentSection(post.id)}
+                    >
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.muted} />
+                      <Text style={[styles.postActionText, { color: theme.subtext }]}>{post.commentsCount || 0}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Sección de Comentarios */}
+                  {profileActiveComment === post.id && (
+                    <View style={[styles.commentSection, { borderTopColor: theme.border }]}>
+                      {/* Lista de comentarios existentes */}
+                      {(postComments[post.id] || []).map((comment: any) => (
+                        <View key={comment.id} style={styles.commentItem}>
+                          <View style={[styles.commentAvatar, { backgroundColor: theme.inputBackground }]}>
+                            {comment.perfil?.foto_perfil && !comment.perfil.foto_perfil.includes('unsplash') ? (
+                              <Image source={{ uri: comment.perfil.foto_perfil }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                            ) : (
+                              <Ionicons name="person" size={14} color={theme.muted} />
+                            )}
+                          </View>
+                          <View style={[styles.commentContent, { backgroundColor: theme.inputBackground }]}>
+                            <Text style={[styles.commentAuthor, { color: theme.text }]}>{comment.perfil?.username || 'Usuario'}</Text>
+                            <Text style={[styles.commentText, { color: theme.subtext }]}>{comment.comentario}</Text>
+                            <Text style={[styles.commentTime, { color: theme.muted }]}>{getTimeAgo(comment.created_at)}</Text>
+                          </View>
+                        </View>
+                      ))}
+
+                      {/* Input para nuevo comentario */}
+                      <View style={styles.commentInputRow}>
+                        <TextInput
+                          style={[styles.commentInputField, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }]}
+                          placeholder="Escribe un comentario..."
+                          placeholderTextColor={theme.placeholder}
+                          value={profileCommentInputs[post.id] || ''}
+                          onChangeText={(v) => setProfileCommentInputs(prev => ({ ...prev, [post.id]: v }))}
+                          multiline
+                        />
+                        <TouchableOpacity
+                          style={[styles.commentSendBtn, { backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9' }]}
+                          onPress={() => handleSubmitCommentProfile(post.id)}
+                          disabled={profileSubmittingComment === post.id}
+                        >
+                          {profileSubmittingComment === post.id ? (
+                            <ActivityIndicator size="small" color={theme.primary} />
+                          ) : (
+                            <Ionicons name="send" size={18} color={theme.primary} />
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -1087,12 +1285,12 @@ export default function ProfileScreen() {
 
       {/* MODAL DE EDICIÓN */}
       <Modal visible={isEditing} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setIsEditing(false)}>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
+        <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={() => setIsEditing(false)} disabled={saving}>
-              <Text style={styles.modalCancelText}>Cancelar</Text>
+              <Text style={[styles.modalCancelText, { color: theme.subtext }]}>Cancelar</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>Editar Perfil</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>Editar Perfil</Text>
             <TouchableOpacity onPress={saveProfile} disabled={saving}>
               {saving ? <ActivityIndicator size="small" color="#2e7d32" /> : <Text style={styles.modalSaveText}>Guardar</Text>}
             </TouchableOpacity>
@@ -1114,25 +1312,27 @@ export default function ProfileScreen() {
             </View>
 
             {/* Editar Username */}
-            <Text style={styles.label}>Nombre de usuario</Text>
+            <Text style={[styles.label, { color: theme.subtext }]}>Nombre de usuario</Text>
             <TextInput
-              style={[styles.input, usernameError ? styles.inputError : null]}
+              style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }, usernameError ? styles.inputError : null]}
               value={editUsername}
               onChangeText={setEditUsername}
               autoCapitalize="none"
               editable={!saving}
+              placeholderTextColor={theme.placeholder}
             />
             {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
 
             {/* Editar Descripción */}
-            <Text style={styles.label}>Descripción</Text>
+            <Text style={[styles.label, { color: theme.subtext }]}>Descripción</Text>
             <TextInput
-              style={[styles.input, styles.textArea]}
+              style={[styles.input, styles.textArea, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }]}
               value={editDescription}
               onChangeText={setEditDescription}
               multiline
               numberOfLines={4}
               placeholder="Cuéntanos sobre ti..."
+              placeholderTextColor={theme.placeholder}
               editable={!saving}
             />
           </ScrollView>
@@ -1142,39 +1342,33 @@ export default function ProfileScreen() {
       {/* MODAL DE CONFIGURACIÓN / IDIOMA */}
       <Modal visible={settingsVisible} transparent animationType="fade" onRequestClose={() => setSettingsVisible(false)}>
         <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={() => setSettingsVisible(false)}>
-          <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
-            <View style={{ width: 40, height: 4, backgroundColor: '#ccc', borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
-            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 20 }}>{i18n.t('profile.settings')}</Text>
+          <View style={{ backgroundColor: theme.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 }}>
+            <View style={{ width: 40, height: 4, backgroundColor: theme.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 }} />
+            <Text style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 20, color: theme.text }}>{i18n.t('profile.settings')}</Text>
             
             <TouchableOpacity 
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' }} 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: theme.border }} 
               onPress={async () => {
                 const newLang = currentLocale === 'es' ? 'en' : 'es';
                 await changeLanguage(newLang);
                 setCurrentLocale(newLang);
               }}
             >
-              <Ionicons name="language-outline" size={24} color="#111" style={{ marginRight: 15 }} />
-              <Text style={{ fontSize: 16 }}>
+              <Ionicons name="language-outline" size={24} color={theme.text} style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16, color: theme.text }}>
                 {currentLocale === 'es' ? i18n.t('profile.changeToEn') : i18n.t('profile.changeToEs')}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#eee' }} 
+              style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: theme.border }} 
               onPress={() => {
-                const isDark = isDarkMode;
-                setIsDarkMode(!isDark);
-                // Also toggle body bg if web
-                if (Platform.OS === 'web') {
-                  document.body.style.backgroundColor = !isDark ? '#000' : '#fff';
-                }
-                AsyncStorage.setItem('theme', !isDark ? 'dark' : 'light');
+                toggleTheme();
               }}
             >
-              <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={24} color="#111" style={{ marginRight: 15 }} />
-              <Text style={{ fontSize: 16 }}>
-                {isDarkMode ? 'Cambiar a modo claro' : 'Cambiar a modo oscuro'}
+              <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={24} color={theme.text} style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16, color: theme.text }}>
+                {isDarkMode ? i18n.t('profile.changeToLight') : i18n.t('profile.changeToDark')}
               </Text>
             </TouchableOpacity>
 
@@ -1196,16 +1390,16 @@ export default function ProfileScreen() {
         {selectingDraft && (
           <Modal visible transparent animationType="slide">
             <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
-              <View style={{ backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: Dimensions.get('window').height * 0.85 }}>
-                <View style={{ padding: 20, borderBottomWidth: 1, borderColor: '#eee', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: 'bold' }}>Selecciona la Especie</Text>
+              <View style={{ backgroundColor: theme.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: Dimensions.get('window').height * 0.85 }}>
+                <View style={{ padding: 20, borderBottomWidth: 1, borderColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text }}>Selecciona la Especie</Text>
                   <TouchableOpacity onPress={() => setSelectingDraft(null)}>
-                    <Ionicons name="close" size={24} color="#333" />
+                    <Ionicons name="close" size={24} color={theme.subtext} />
                   </TouchableOpacity>
                 </View>
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
                   <Image source={{ uri: selectingDraft.media_uri }} style={{ width: '100%', height: 200, borderRadius: 16, marginBottom: 20 }} />
-                  <Text style={{ fontSize: 16, color: '#666', marginBottom: 12 }}>¿Cuál de estos identificaste?</Text>
+                  <Text style={{ fontSize: 16, color: theme.subtext, marginBottom: 12 }}>¿Cuál de estos identificaste?</Text>
                   
                   {((selectingDraft.metadatos_especie as any)?.all_candidates || []).map((cand: any, idx: number) => (
                     <TouchableOpacity 
@@ -1213,36 +1407,36 @@ export default function ProfileScreen() {
                       style={{ 
                         flexDirection: 'row', 
                         alignItems: 'center', 
-                        backgroundColor: '#f8faf9', 
+                        backgroundColor: theme.inputBackground, 
                         padding: 16, 
                         borderRadius: 16, 
                         marginBottom: 12, 
                         borderWidth: 1, 
-                        borderColor: '#e0e0e0',
+                        borderColor: theme.border,
                         opacity: isSubmitting ? 0.5 : 1
                       }}
                       onPress={() => handleSelectCandidate(cand)}
                       disabled={isSubmitting}
                     >
-                      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#e8f5e9', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
-                        <Ionicons name="paw" size={24} color="#2e7d32" />
+                      <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9', justifyContent: 'center', alignItems: 'center', marginRight: 16 }}>
+                        <Ionicons name="paw" size={24} color={theme.primary} />
                       </View>
                       <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#111' }}>{cand.nombreTradicional}</Text>
-                        <Text style={{ fontSize: 14, color: '#666', fontStyle: 'italic' }}>{cand.nombreCientifico}</Text>
+                        <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>{cand.nombreTradicional}</Text>
+                        <Text style={{ fontSize: 14, color: theme.subtext, fontStyle: 'italic' }}>{cand.nombreCientifico}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 12 }}>
-                          <Text style={{ fontSize: 12, color: '#2e7d32' }}>Certeza: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
+                          <Text style={{ fontSize: 12, color: theme.primary }}>Certeza: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
                           {candidateCounts[cand.nombreCientifico] !== undefined && (
-                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
-                              <Ionicons name="eye-outline" size={12} color="#2e7d32" style={{ marginRight: 4 }} />
-                              <Text style={{ fontSize: 11, color: '#2e7d32', fontWeight: 'bold' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
+                              <Ionicons name="eye-outline" size={12} color={theme.primary} style={{ marginRight: 4 }} />
+                              <Text style={{ fontSize: 11, color: theme.primary, fontWeight: 'bold' }}>
                                 {candidateCounts[cand.nombreCientifico]} {candidateCounts[cand.nombreCientifico] === 1 ? 'registro' : 'registros'}
                               </Text>
                             </View>
                           )}
                         </View>
                       </View>
-                      <Ionicons name="chevron-forward" size={20} color="#ccc" />
+                      <Ionicons name="chevron-forward" size={20} color={theme.muted} />
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -1702,6 +1896,104 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+
+  // --- Post Actions (Like / Comment) ---
+  postActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  postActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  postActionBtnActive: {
+    backgroundColor: 'rgba(236, 72, 153, 0.08)',
+  },
+  postActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#555',
+  },
+
+  // --- Comments Section ---
+  commentSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  commentItem: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    gap: 8,
+  },
+  commentAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#f0f0f0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  commentContent: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 12,
+    padding: 8,
+    paddingHorizontal: 12,
+  },
+  commentAuthor: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#111',
+    marginBottom: 2,
+  },
+  commentText: {
+    fontSize: 13,
+    color: '#333',
+    lineHeight: 18,
+  },
+  commentTime: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 4,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  commentInputField: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#111',
+    backgroundColor: '#fafafa',
+    maxHeight: 80,
+  },
+  commentSendBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#e8f5e9',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 

@@ -13,9 +13,12 @@ import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
 import { getFollowers, getFollowing, searchUsers } from '../lib/follows';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 export default function NewChatScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
   // Lista inicial (seguidores + seguidos)
@@ -87,23 +90,22 @@ export default function NewChatScreen() {
     const hasPhoto = item.foto_perfil && !item.foto_perfil.includes('images.unsplash.com');
     return (
       <TouchableOpacity 
-        style={styles.userItem} 
+        style={[styles.userItem, { borderBottomColor: theme.border }]} 
         onPress={() => {
-          // Reemplazamos esta pantalla por la del chat con este usuario
           router.replace({ pathname: '/messages', params: { userId: item.id } });
         }}
       >
         {hasPhoto ? (
           <Image source={{ uri: item.foto_perfil! }} style={styles.avatar} />
         ) : (
-          <View style={[styles.avatar, styles.placeholderAvatar]}>
-            <Ionicons name="person" size={24} color="#ccc" />
+          <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: theme.inputBackground }]}>
+            <Ionicons name="person" size={24} color={theme.muted} />
           </View>
         )}
         <View style={styles.userInfo}>
-          <Text style={styles.username}>{item.username || item.nombre}</Text>
+          <Text style={[styles.username, { color: theme.text }]}>{item.username || item.nombre}</Text>
           {item.descripcion && (
-            <Text style={styles.description} numberOfLines={1}>{item.descripcion}</Text>
+            <Text style={[styles.description, { color: theme.subtext }]} numberOfLines={1}>{item.descripcion}</Text>
           )}
         </View>
       </TouchableOpacity>
@@ -111,43 +113,45 @@ export default function NewChatScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen 
         options={{
           headerShown: true,
-          headerTitle: 'Iniciar Chat',
-          headerBackTitle: 'Atrás'
+          headerTitle: i18n.t('social.startChat'),
+          headerBackTitle: i18n.t('common.back'),
+          headerStyle: { backgroundColor: theme.surface },
+          headerTintColor: theme.text,
         }}
       />
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: theme.inputBackground }]}>
+        <Ionicons name="search" size={20} color={theme.muted} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar usuarios..."
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder={i18n.t('social.searchUsers')}
           value={search}
           onChangeText={setSearch}
-          placeholderTextColor="#888"
+          placeholderTextColor={theme.placeholder}
           autoCapitalize="none"
         />
         {searching ? (
-          <ActivityIndicator size="small" color="#004d40" style={{ marginLeft: 8 }} />
+          <ActivityIndicator size="small" color={theme.primary} style={{ marginLeft: 8 }} />
         ) : search.length > 0 ? (
           <TouchableOpacity onPress={() => setSearch('')}>
-            <Ionicons name="close-circle" size={20} color="#888" style={{ marginLeft: 8 }} />
+            <Ionicons name="close-circle" size={20} color={theme.muted} style={{ marginLeft: 8 }} />
           </TouchableOpacity>
         ) : null}
       </View>
 
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#004d40" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : displayUsers.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="people-outline" size={60} color="#ccc" />
-          <Text style={styles.emptyText}>
-            {search.length > 0 ? 'No se encontraron usuarios.' : 'Aún no sigues a nadie para chatear.'}
+          <Ionicons name="people-outline" size={60} color={theme.muted} />
+          <Text style={[styles.emptyText, { color: theme.muted }]}>
+            {search.length > 0 ? i18n.t('social.noUsersFound') : i18n.t('social.noFollowChat')}
           </Text>
         </View>
       ) : (

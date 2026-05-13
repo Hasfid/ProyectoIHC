@@ -24,6 +24,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 /** Resumen de una conversación con el último mensaje y perfil */
 type Conversation = {
@@ -38,6 +40,7 @@ type Conversation = {
 
 export default function ChatListScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -216,30 +219,30 @@ export default function ChatListScreen() {
 
   const renderItem = ({ item }: { item: Conversation }) => (
     <TouchableOpacity
-      style={styles.chatItem}
+      style={[styles.chatItem, { borderBottomColor: theme.border }]}
       onPress={() => router.push({ pathname: '/messages', params: { userId: item.other_user_id } })}
     >
       <View style={styles.avatarContainer}>
         {item.foto_perfil ? (
           <Image source={{ uri: item.foto_perfil }} style={styles.avatar} />
         ) : (
-          <View style={[styles.avatar, styles.placeholderAvatar]}>
-            <Ionicons name="person" size={24} color="#ccc" />
+          <View style={[styles.avatar, styles.placeholderAvatar, { backgroundColor: theme.inputBackground }]}>
+            <Ionicons name="person" size={24} color={theme.muted} />
           </View>
         )}
       </View>
-      <View style={styles.chatInfo}>
+      <View style={[styles.chatInfo, { borderBottomColor: theme.border }]}>
         <View style={styles.chatHeader}>
-          <Text style={styles.username}>{item.username || item.nombre}</Text>
-          <Text style={styles.time}>{getTimeAgo(item.last_message_time)}</Text>
+          <Text style={[styles.username, { color: theme.text }]}>{item.username || item.nombre}</Text>
+          <Text style={[styles.time, { color: theme.muted }]}>{getTimeAgo(item.last_message_time)}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={[styles.lastMessage, { flex: 1, fontWeight: item.unread_count > 0 ? 'bold' : 'normal', color: item.unread_count > 0 ? '#111' : '#666' }]} numberOfLines={1}>
+          <Text style={[styles.lastMessage, { flex: 1, color: item.unread_count > 0 ? theme.text : theme.subtext, fontWeight: item.unread_count > 0 ? 'bold' : 'normal' }]} numberOfLines={1}>
             {item.last_message}
           </Text>
           {item.unread_count > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadText}>{item.unread_count}</Text>
+            <View style={[styles.unreadBadge, { backgroundColor: theme.primary }]}>
+              <Text style={[styles.unreadText, { color: theme.primaryText }]}>{item.unread_count}</Text>
             </View>
           )}
         </View>
@@ -261,22 +264,24 @@ export default function ChatListScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: 'Bandeja de entrada',
+          headerTitle: i18n.t('messages.inbox'),
+          headerStyle: { backgroundColor: theme.surface },
+          headerTintColor: theme.text,
           headerLeft: () => (
             <TouchableOpacity 
               onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} 
               style={{ marginLeft: 5 }}
             >
-              <Ionicons name="arrow-back" size={24} color="#004d40" />
+              <Ionicons name="arrow-back" size={24} color={theme.primary} />
             </TouchableOpacity>
           ),
           headerRight: () => (
             <TouchableOpacity onPress={() => router.push('/new-chat')}>
-              <Ionicons name="create-outline" size={24} color="#004d40" style={{ marginRight: 15 }} />
+              <Ionicons name="create-outline" size={24} color={theme.primary} style={{ marginRight: 15 }} />
             </TouchableOpacity>
           ),
         }}
@@ -284,18 +289,18 @@ export default function ChatListScreen() {
 
       {loading ? (
         <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#004d40" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : conversations.length === 0 ? (
         <View style={styles.centerContainer}>
-          <Ionicons name="chatbubble-ellipses-outline" size={80} color="#ccc" />
-          <Text style={styles.emptyTitle}>Sin conversaciones</Text>
-          <Text style={styles.emptySubtitle}>Inicia un chat con alguien que sigas.</Text>
+          <Ionicons name="chatbubble-ellipses-outline" size={80} color={theme.muted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>{i18n.t('messages.noConversations')}</Text>
+          <Text style={[styles.emptySubtitle, { color: theme.subtext }]}>{i18n.t('messages.startChatHint')}</Text>
           <TouchableOpacity
-            style={styles.startButton}
+            style={[styles.startButton, { backgroundColor: theme.primary }]}
             onPress={() => router.push('/new-chat')}
           >
-            <Text style={styles.startButtonText}>Empezar a chatear</Text>
+            <Text style={[styles.startButtonText, { color: theme.primaryText }]}>{i18n.t('messages.startChatButton')}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -303,7 +308,7 @@ export default function ChatListScreen() {
           data={conversations}
           keyExtractor={(item) => item.other_user_id}
           renderItem={renderItem}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           contentContainerStyle={styles.listContent}
         />
       )}

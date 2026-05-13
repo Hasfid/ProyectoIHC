@@ -11,16 +11,17 @@
  * - Perfil: Gestión de usuario y borradores offline.
  */
 
-import React, { useState, useEffect } from 'react';
-import { withLayoutContext } from 'expo-router';
-import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Text, StyleSheet, Platform, DeviceEventEmitter, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { supabase } from '../../lib/supabase';
+import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
+import { withLayoutContext } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { DeviceEventEmitter, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
 import { i18n, changeLanguage } from '../../lib/i18n';
+import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../lib/theme';
 
 const { Navigator } = createMaterialTopTabNavigator();
 const MaterialTopTabs = withLayoutContext(Navigator);
@@ -34,28 +35,8 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
   const { width } = useWindowDimensions();
   const isSmallScreen = width < 768;
   const [menuOpen, setMenuOpen] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
-
-  useEffect(() => {
-    if (Platform.OS === 'web') {
-      AsyncStorage.getItem('theme').then((t) => setIsDarkMode(t === 'dark'));
-    }
-  }, []);
-
-  const toggleTheme = () => {
-    const nextDark = !isDarkMode;
-    setIsDarkMode(nextDark);
-    if (Platform.OS === 'web') {
-      document.body.style.backgroundColor = nextDark ? '#000' : '#fff';
-      AsyncStorage.setItem('theme', nextDark ? 'dark' : 'light').then(() => {
-        window.location.reload();
-      });
-    } else {
-      AsyncStorage.setItem('theme', nextDark ? 'dark' : 'light');
-    }
-    setMenuOpen(false);
-  };
+  const { theme, toggleTheme } = useTheme();
 
   const toggleLanguage = async () => {
     const newLang = currentLocale === 'es' ? 'en' : 'es';
@@ -67,13 +48,18 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
     }
   };
 
+  const toggleThemeAction = () => {
+    toggleTheme();
+    setMenuOpen(false);
+  };
+
   const logout = async () => {
     setMenuOpen(false);
     await supabase.auth.signOut();
   };
 
   return (
-    <View style={[webStyles.container, isSmallScreen && { paddingHorizontal: 8 }]}>
+    <View style={[webStyles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }, isSmallScreen && { paddingHorizontal: 8 }]}>
       {/* IZQUIERDA: LOGO */}
       <View style={webStyles.leftContainer}>
         <Ionicons name="leaf" size={28} color="#2e7d32" />
@@ -110,9 +96,9 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
                 isSmallScreen && { paddingHorizontal: 12 }
               ]}
             >
-              {options.tabBarIcon && options.tabBarIcon({ color: isFocused ? '#2e7d32' : '#666', focused: isFocused })}
+              {options.tabBarIcon && options.tabBarIcon({ color: isFocused ? theme.primary : theme.muted, focused: isFocused })}
               {!isSmallScreen && (
-                <Text style={[webStyles.tabLabel, isFocused && webStyles.tabLabelActive]}>
+                <Text style={[webStyles.tabLabel, { color: isFocused ? theme.primary : theme.muted }, isFocused && webStyles.tabLabelActive]}>
                   {options.title || route.name}
                 </Text>
               )}
@@ -123,16 +109,30 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
 
       {/* DERECHA: MENSAJERÍA, NOTIFICACIONES Y PERFIL */}
       <View style={[webStyles.rightContainer, isSmallScreen && { gap: 4, flex: 1.5 }]}>
-        <TouchableOpacity style={[webStyles.iconBtn, isSmallScreen && { width: 32, height: 32 }]} onPress={() => router.push('/notifications')}>
-          <Ionicons name="notifications" size={isSmallScreen ? 18 : 22} color="#333" />
+        <TouchableOpacity
+          style={[
+            webStyles.iconBtn,
+            { backgroundColor: theme.mode === 'dark' ? '#111924' : '#f0f2f5', borderColor: theme.border },
+            isSmallScreen && { width: 32, height: 32 },
+          ]}
+          onPress={() => router.push('/notifications')}
+        >
+          <Ionicons name="notifications" size={isSmallScreen ? 18 : 22} color={theme.text} />
           {unreadCount > 0 && (
             <View style={[webStyles.badge, isSmallScreen && { top: -2, right: -2 }]}>
               <Text style={webStyles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
             </View>
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={[webStyles.iconBtn, isSmallScreen && { width: 32, height: 32 }]} onPress={() => router.push('/chat')}>
-          <Ionicons name="chatbubble" size={isSmallScreen ? 18 : 22} color="#333" />
+        <TouchableOpacity
+          style={[
+            webStyles.iconBtn,
+            { backgroundColor: theme.mode === 'dark' ? '#111924' : '#f0f2f5', borderColor: theme.border },
+            isSmallScreen && { width: 32, height: 32 },
+          ]}
+          onPress={() => router.push('/chat')}
+        >
+          <Ionicons name="chatbubble" size={isSmallScreen ? 18 : 22} color={theme.text} />
           {unreadMessages > 0 && (
             <View style={[webStyles.badge, isSmallScreen && { top: -2, right: -2 }]}>
               <Text style={webStyles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
@@ -143,16 +143,21 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
         <View style={{ flexDirection: 'row', alignItems: 'center', position: 'relative' }}>
           <View style={{ position: 'relative' }}>
             <TouchableOpacity 
-              style={[webStyles.iconBtn, state.index === 4 && webStyles.iconBtnActive, { marginRight: 8 }, isSmallScreen && { width: 32, height: 32 }]} 
+              style={[
+                webStyles.iconBtn,
+                state.index === 4 && webStyles.iconBtnActive,
+                { marginRight: 8, backgroundColor: theme.surface, borderColor: theme.border },
+                isSmallScreen && { width: 32, height: 32 }
+              ]} 
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
-              <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={isSmallScreen ? 18 : 22} color={state.index === 4 ? "#2e7d32" : "#333"} />
+              <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={isSmallScreen ? 18 : 22} color={state.index === 4 ? theme.primary : theme.text} />
             </TouchableOpacity>
             <TouchableOpacity 
               onPress={() => setMenuOpen(!menuOpen)} 
-              style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: '#fff', borderRadius: 10, padding: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1 }}
+              style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: theme.surface, borderRadius: 10, padding: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1 }}
             >
-              <Ionicons name="chevron-down" size={14} color="#333" />
+              <Ionicons name="chevron-down" size={14} color={theme.text} />
             </TouchableOpacity>
           </View>
           
@@ -161,30 +166,30 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
               position: 'absolute',
               top: 45,
               right: 0,
-              backgroundColor: '#fff',
+              backgroundColor: theme.surface,
               borderRadius: 8,
               padding: 8,
               shadowColor: '#000',
               shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
+              shadowOpacity: 0.15,
               shadowRadius: 10,
               elevation: 5,
               zIndex: 999,
               width: 180,
               borderWidth: 1,
-              borderColor: '#eee'
+              borderColor: theme.border,
             }}>
-              <TouchableOpacity onPress={toggleLanguage} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name="language-outline" size={18} color="#333" style={{ marginRight: 10 }} />
-                <Text style={{ fontSize: 14 }}>{currentLocale === 'es' ? 'Cambiar a Inglés' : 'Cambiar a Español'}</Text>
+              <TouchableOpacity onPress={toggleLanguage} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name="language-outline" size={18} color={theme.text} style={{ marginRight: 10 }} />
+                <Text style={{ fontSize: 14, color: theme.text }}>{currentLocale === 'es' ? i18n.t('profile.changeToEn') : i18n.t('profile.changeToEs')}</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={toggleTheme} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#eee', flexDirection: 'row', alignItems: 'center' }}>
-                <Ionicons name={isDarkMode ? "sunny-outline" : "moon-outline"} size={18} color="#333" style={{ marginRight: 10 }} />
-                <Text style={{ fontSize: 14 }}>{isDarkMode ? 'Modo Claro' : 'Modo Oscuro'}</Text>
+              <TouchableOpacity onPress={toggleThemeAction} style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: theme.border, flexDirection: 'row', alignItems: 'center' }}>
+                <Ionicons name={theme.mode === 'dark' ? "sunny-outline" : "moon-outline"} size={18} color={theme.text} style={{ marginRight: 10 }} />
+                <Text style={{ fontSize: 14, color: theme.text }}>{theme.mode === 'dark' ? i18n.t('profile.changeToLight') : i18n.t('profile.changeToDark')}</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={logout} style={{ padding: 12, flexDirection: 'row', alignItems: 'center' }}>
                 <Ionicons name="log-out-outline" size={18} color="#d32f2f" style={{ marginRight: 10 }} />
-                <Text style={{ color: '#d32f2f', fontSize: 14 }}>Cerrar sesión</Text>
+                <Text style={{ color: '#d32f2f', fontSize: 14 }}>{i18n.t('profile.logout')}</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -293,6 +298,7 @@ const webStyles = StyleSheet.create({
 /** Componente principal de navegación por pestañas */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { theme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
@@ -410,11 +416,11 @@ export default function TabLayout() {
       tabBarPosition={Platform.OS === 'web' ? 'top' : 'bottom'}
       tabBar={Platform.OS === 'web' ? (props: any) => <WebTopTabBar {...props} unreadCount={unreadCount} unreadMessages={unreadMessages} /> : undefined}
       screenOptions={{
-        tabBarActiveTintColor: '#004d40',
-        tabBarInactiveTintColor: '#888',
-        tabBarIndicatorStyle: { backgroundColor: '#004d40', top: 0, height: 3 },
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.subtext,
+        tabBarIndicatorStyle: { backgroundColor: theme.primary, top: 0, height: 3 },
         tabBarStyle: {
-          backgroundColor: '#fff',
+          backgroundColor: theme.surface,
           paddingBottom: Platform.OS === 'ios' ? insets.bottom + 10 : 15,
           paddingTop: 10,
           height: Platform.OS === 'ios' ? 75 + insets.bottom : 80,
@@ -430,7 +436,7 @@ export default function TabLayout() {
       <MaterialTopTabs.Screen
         name="index"
         options={{
-          title: 'Descubrir',
+          title: i18n.t('tabs.discover'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <View>
               <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />
@@ -446,28 +452,28 @@ export default function TabLayout() {
       <MaterialTopTabs.Screen
         name="observatory"
         options={{
-          title: 'Observatorio',
+          title: i18n.t('tabs.observatory'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "earth" : "earth-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="scanner"
         options={{
-          title: 'Escáner',
+          title: i18n.t('tabs.scanner'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="records"
         options={{
-          title: 'Registros',
+          title: i18n.t('tabs.records'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "library" : "library-outline"} size={24} color={color} />,
         }}
       />
       <MaterialTopTabs.Screen
         name="profile"
         options={{
-          title: 'Perfil',
+          title: i18n.t('tabs.profile'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <View>
               <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />

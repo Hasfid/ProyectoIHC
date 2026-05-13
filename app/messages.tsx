@@ -32,6 +32,8 @@ import { useHeaderHeight } from '@react-navigation/elements';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 /** Estructura de un mensaje individual */
 type Message = {
@@ -46,6 +48,7 @@ type Message = {
 export default function MessagesScreen() {
   const { userId } = useLocalSearchParams<{ userId: string }>();
   const router = useRouter();
+  const { theme } = useTheme();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -286,18 +289,18 @@ export default function MessagesScreen() {
       <TouchableOpacity 
         onLongPress={() => handleLongPress(item)}
         activeOpacity={0.8}
-        style={[styles.messageBubble, isMine ? styles.myMessage : styles.theirMessage]}
+        style={[styles.messageBubble, isMine ? styles.myMessage : [styles.theirMessage, { backgroundColor: theme.card, borderColor: theme.border }]]}
       >
-        <Text style={[styles.messageText, isMine ? styles.myMessageText : styles.theirMessageText]}>
+        <Text style={[styles.messageText, isMine ? styles.myMessageText : { color: theme.text }]}>
           {item.contenido}
         </Text>
         <View style={styles.messageFooter}>
           {item.is_edited && (
-            <Text style={[styles.messageTime, isMine ? styles.myMessageTime : styles.theirMessageTime, { marginRight: 4, fontStyle: 'italic' }]}>
-              Editado
+            <Text style={[styles.messageTime, isMine ? styles.myMessageTime : { color: theme.muted }, { marginRight: 4, fontStyle: 'italic' }]}>
+              {i18n.t('messages.edited')}
             </Text>
           )}
-          <Text style={[styles.messageTime, isMine ? styles.myMessageTime : styles.theirMessageTime]}>
+          <Text style={[styles.messageTime, isMine ? styles.myMessageTime : { color: theme.muted }]}>
             {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
@@ -309,19 +312,21 @@ export default function MessagesScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.background }]}
       behavior="padding"
       keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 90}
     >
       <Stack.Screen
         options={{
           headerShown: true,
+          headerStyle: { backgroundColor: theme.surface },
+          headerTintColor: theme.text,
           headerLeft: () => Platform.OS === 'web' ? (
             <TouchableOpacity 
               onPress={() => router.canGoBack() ? router.back() : router.replace('/chat')} 
               style={{ padding: 8, marginRight: 8, flexDirection: 'row', alignItems: 'center' }}
             >
-              <Ionicons name="arrow-back" size={24} color="#004d40" />
+              <Ionicons name="arrow-back" size={24} color={theme.primary} />
             </TouchableOpacity>
           ) : undefined,
           headerTitle: () => (
@@ -332,19 +337,19 @@ export default function MessagesScreen() {
               {recipientProfile?.foto_perfil ? (
                 <Image source={{ uri: recipientProfile.foto_perfil }} style={{ width: 32, height: 32, borderRadius: 16, marginRight: 10 }} />
               ) : (
-                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#e0e0e0', justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
-                  <Ionicons name="person" size={16} color="#999" />
+                <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.inputBackground, justifyContent: 'center', alignItems: 'center', marginRight: 10 }}>
+                  <Ionicons name="person" size={16} color={theme.muted} />
                 </View>
               )}
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#111' }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>
                 {recipientProfile ? (recipientProfile.username || recipientProfile.nombre) : 'Cargando...'}
               </Text>
             </TouchableOpacity>
           ),
-          headerBackTitle: 'Atrás',
+          headerBackTitle: i18n.t('common.back'),
           headerRight: () => (
             <TouchableOpacity onPress={showOptionsMenu} style={{ padding: 8 }}>
-              <Ionicons name="ellipsis-vertical" size={24} color="#004d40" />
+              <Ionicons name="ellipsis-vertical" size={24} color={theme.primary} />
             </TouchableOpacity>
           ),
         }}
@@ -352,7 +357,7 @@ export default function MessagesScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#004d40" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : (
         <FlatList
@@ -365,10 +370,11 @@ export default function MessagesScreen() {
         />
       )}
 
-      <View style={styles.inputContainer}>
+      <View style={[styles.inputContainer, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
         <TextInput
-          style={styles.input}
-          placeholder="Escribe un mensaje..."
+          style={[styles.input, { backgroundColor: theme.inputBackground, color: theme.text }]}
+          placeholder={i18n.t('messages.typeMessage')}
+          placeholderTextColor={theme.placeholder}
           value={newMessage}
           onChangeText={setNewMessage}
           multiline
@@ -382,14 +388,14 @@ export default function MessagesScreen() {
           }}
         />
         <TouchableOpacity
-          style={[styles.sendButton, !newMessage.trim() && styles.sendButtonDisabled, editingMessage && { backgroundColor: '#2e7d32' }]}
+          style={[styles.sendButton, { backgroundColor: theme.primary }, !newMessage.trim() && styles.sendButtonDisabled, editingMessage && { backgroundColor: '#2e7d32' }]}
           onPress={handleSendMessage}
           disabled={!newMessage.trim() || sending}
         >
           {sending ? (
-            <ActivityIndicator size="small" color="#fff" />
+            <ActivityIndicator size="small" color={theme.primaryText} />
           ) : (
-            <Ionicons name={editingMessage ? "checkmark" : "send"} size={20} color="#fff" />
+            <Ionicons name={editingMessage ? "checkmark" : "send"} size={20} color={theme.primaryText} />
           )}
         </TouchableOpacity>
         {editingMessage && (
@@ -397,7 +403,7 @@ export default function MessagesScreen() {
             style={styles.cancelEditBtn} 
             onPress={() => { setEditingMessage(null); setNewMessage(''); }}
           >
-            <Ionicons name="close-circle" size={24} color="#888" />
+            <Ionicons name="close-circle" size={24} color={theme.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -405,13 +411,13 @@ export default function MessagesScreen() {
       {/* Modal Opciones de Chat */}
       <Modal visible={chatOptionsVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setChatOptionsVisible(false)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Opciones de chat</Text>
-            <TouchableOpacity style={styles.modalButton} onPress={() => { setChatOptionsVisible(false); handleDeleteChat(); }}>
-              <Text style={styles.modalButtonDestructive}>Cerrar chat</Text>
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{i18n.t('messages.chatOptions')}</Text>
+            <TouchableOpacity style={[styles.modalButton, { borderBottomColor: theme.border }]} onPress={() => { setChatOptionsVisible(false); handleDeleteChat(); }}>
+              <Text style={styles.modalButtonDestructive}>{i18n.t('messages.closeChat')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={() => setChatOptionsVisible(false)}>
-              <Text style={styles.modalButtonCancel}>Cancelar</Text>
+            <TouchableOpacity style={[styles.modalButton, { borderBottomColor: theme.border }]} onPress={() => setChatOptionsVisible(false)}>
+              <Text style={[styles.modalButtonCancel, { color: theme.muted }]}>{i18n.t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -420,25 +426,25 @@ export default function MessagesScreen() {
       {/* Modal Opciones de Mensaje */}
       <Modal visible={!!messageOptionsVisible} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setMessageOptionsVisible(null)}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Opciones de mensaje</Text>
-            <TouchableOpacity style={styles.modalButton} onPress={() => { 
+          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{i18n.t('messages.messageOptions')}</Text>
+            <TouchableOpacity style={[styles.modalButton, { borderBottomColor: theme.border }]} onPress={() => { 
               if (messageOptionsVisible) {
                 setEditingMessage(messageOptionsVisible);
                 setNewMessage(messageOptionsVisible.contenido);
               }
               setMessageOptionsVisible(null);
             }}>
-              <Text style={styles.modalButtonText}>Editar</Text>
+              <Text style={styles.modalButtonText}>{i18n.t('common.edit')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={() => {
+            <TouchableOpacity style={[styles.modalButton, { borderBottomColor: theme.border }]} onPress={() => {
               if (messageOptionsVisible) handleDeleteMessage(messageOptionsVisible.id);
               setMessageOptionsVisible(null);
             }}>
-              <Text style={styles.modalButtonDestructive}>Eliminar</Text>
+              <Text style={styles.modalButtonDestructive}>{i18n.t('common.delete')}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.modalButton} onPress={() => setMessageOptionsVisible(null)}>
-              <Text style={styles.modalButtonCancel}>Cancelar</Text>
+            <TouchableOpacity style={[styles.modalButton, { borderBottomColor: theme.border }]} onPress={() => setMessageOptionsVisible(null)}>
+              <Text style={[styles.modalButtonCancel, { color: theme.muted }]}>{i18n.t('common.cancel')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>

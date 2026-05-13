@@ -8,7 +8,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -24,6 +24,8 @@ import {
 } from 'react-native';
 import { followUser, getFollowingIds, unfollowUser } from '../../lib/follows';
 import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../lib/theme';
+import { i18n } from '../../lib/i18n';
 
 
 // ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
@@ -47,10 +49,14 @@ type Post = {
     nombre: string;
     foto_perfil: string | null;
   };
+  likesCount: number;
+  commentsCount: number;
+  likedByMe: boolean;
 };
 
 export default function ObservatoryScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +64,11 @@ export default function ObservatoryScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const [isCreatingPost, setIsCreatingPost] = useState(false);
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
+  const activeCommentPostRef = useRef<string | null>(null);
+  const [submittingCommentId, setSubmittingCommentId] = useState<string | null>(null);
+  const [postComments, setPostComments] = useState<Record<string, any[]>>({});
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostDesc, setNewPostDesc] = useState('');
   const [publishing, setPublishing] = useState(false);
@@ -99,6 +110,26 @@ export default function ObservatoryScreen() {
 
       // Paso 4: Combinar los datos
       const profilesMap = new Map((profilesData || []).map(p => [p.id, p]));
+      const postIds = postsData.map(post => post.id);
+
+      // Paso 5: Obtener likes y comentarios para el feed
+      const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+        supabase.from('post_likes').select('publicacion_id, usuario_id').in('publicacion_id', postIds),
+        supabase.from('post_comments').select('publicacion_id').in('publicacion_id', postIds),
+      ]);
+
+      const likeCounts = new Map<string, number>();
+      const commentCounts = new Map<string, number>();
+      const likedByMe = new Set<string>();
+
+      (likesData || []).forEach((like: any) => {
+        likeCounts.set(like.publicacion_id, (likeCounts.get(like.publicacion_id) || 0) + 1);
+        if (uid && like.usuario_id === uid) likedByMe.add(like.publicacion_id);
+      });
+
+      (commentsData || []).forEach((comment: any) => {
+        commentCounts.set(comment.publicacion_id, (commentCounts.get(comment.publicacion_id) || 0) + 1);
+      });
       
       const combinedPosts = postsData.map(post => ({
         ...post,
@@ -106,7 +137,10 @@ export default function ObservatoryScreen() {
           username: 'Usuario',
           nombre: 'Usuario',
           foto_perfil: null
-        }
+        },
+        likesCount: likeCounts.get(post.id) ?? 0,
+        commentsCount: commentCounts.get(post.id) ?? 0,
+        likedByMe: likedByMe.has(post.id),
       }));
 
       console.log('fetchPosts combined success, count:', combinedPosts.length);
@@ -141,8 +175,80 @@ export default function ObservatoryScreen() {
       }).finally(() => {
         if (isMounted) setLoading(false);
       });
-      return () => { isMounted = false; };
-    }, [])
+
+      // Realtime granular — likes
+      const likesChannel = supabase
+        .channel('realtime-post-likes')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_likes' }, (payload) => {
+          if (!isMounted) return;
+          const like = payload.new as any;
+          setPosts(prev => prev.map(p =>
+            p.id === like.publicacion_id
+              ? { ...p, likesCount: p.likesCount + 1, likedByMe: like.usuario_id === currentUserId ? true : p.likedByMe }
+              : p
+          ));
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'post_likes' }, (payload) => {
+          if (!isMounted) return;
+          const like = payload.old as any;
+          setPosts(prev => prev.map(p =>
+            p.id === like.publicacion_id
+              ? { ...p, likesCount: Math.max(0, p.likesCount - 1), likedByMe: like.usuario_id === currentUserId ? false : p.likedByMe }
+              : p
+          ));
+        })
+        .subscribe();
+
+      // Realtime granular — comments
+      const commentsChannel = supabase
+        .channel('realtime-post-comments')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'post_comments' }, (payload) => {
+          if (!isMounted) return;
+          const comment = payload.new as any;
+          setPosts(prev => prev.map(p =>
+            p.id === comment.publicacion_id
+              ? { ...p, commentsCount: p.commentsCount + 1 }
+              : p
+          ));
+          // Si la sección de comentarios de ese post está abierta, recargar sus comentarios
+          if (activeCommentPostRef.current === comment.publicacion_id) {
+            fetchPostComments(comment.publicacion_id);
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'post_comments' }, (payload) => {
+          if (!isMounted) return;
+          const comment = payload.old as any;
+          setPosts(prev => prev.map(p =>
+            p.id === comment.publicacion_id
+              ? { ...p, commentsCount: Math.max(0, p.commentsCount - 1) }
+              : p
+          ));
+          if (activeCommentPostRef.current === comment.publicacion_id) {
+            fetchPostComments(comment.publicacion_id);
+          }
+        })
+        .subscribe();
+
+      // Realtime — nuevas publicaciones
+      const postsChannel = supabase
+        .channel('realtime-publicaciones')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'publicaciones' }, () => {
+          if (isMounted) fetchPosts();
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'publicaciones' }, (payload) => {
+          if (!isMounted) return;
+          const deleted = payload.old as any;
+          setPosts(prev => prev.filter(p => p.id !== deleted.id));
+        })
+        .subscribe();
+
+      return () => {
+        isMounted = false;
+        supabase.removeChannel(likesChannel);
+        supabase.removeChannel(commentsChannel);
+        supabase.removeChannel(postsChannel);
+      };
+    }, [currentUserId])
   );
 
   const onRefresh = async () => {
@@ -233,6 +339,85 @@ export default function ObservatoryScreen() {
     );
   };
 
+  const handleToggleLike = async (postId: string) => {
+    if (!currentUserId) {
+      Alert.alert('Inicia sesión para dar like');
+      return;
+    }
+
+    const post = posts.find((item) => item.id === postId);
+    if (!post) return;
+
+    try {
+      if (post.likedByMe) {
+        const { error } = await supabase
+          .from('post_likes')
+          .delete()
+          .eq('publicacion_id', postId)
+          .eq('usuario_id', currentUserId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('post_likes').insert({
+          publicacion_id: postId,
+          usuario_id: currentUserId,
+        });
+        if (error) throw error;
+      }
+
+      setPosts((current) =>
+        current.map((item) =>
+          item.id === postId
+            ? {
+                ...item,
+                likedByMe: !item.likedByMe,
+                likesCount: item.likesCount + (item.likedByMe ? -1 : 1),
+              }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error('Error toggling like:', err);
+      Alert.alert('Error', i18n.t('observatory.likeFailed'));
+    }
+  };
+
+  const handleSubmitComment = async (postId: string) => {
+    const commentText = (commentInputs[postId] || '').trim();
+    if (!commentText) {
+      Alert.alert(i18n.t('observatory.commentError'));
+      return;
+    }
+    if (!currentUserId) {
+      Alert.alert(i18n.t('observatory.loginToComment'));
+      return;
+    }
+
+    setSubmittingCommentId(postId);
+    try {
+      const { error } = await supabase.from('post_comments').insert({
+        publicacion_id: postId,
+        usuario_id: currentUserId,
+        comentario: commentText,
+      });
+      if (error) throw error;
+
+      setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
+      // Actualizar conteo local sin recargar toda la lista
+      setPosts((current) =>
+        current.map((item) =>
+          item.id === postId ? { ...item, commentsCount: (item.commentsCount || 0) + 1 } : item
+        )
+      );
+      // Recargar solo los comentarios de este post
+      await fetchPostComments(postId);
+    } catch (err) {
+      console.error('Error adding comment:', err);
+      Alert.alert('Error', i18n.t('observatory.commentFailed'));
+    } finally {
+      setSubmittingCommentId(null);
+    }
+  };
+
   /** Calcula el tiempo transcurrido de forma amigable (es-VE) */
   const getTimeAgo = (dateStr: string) => {
     const now = new Date();
@@ -242,11 +427,11 @@ export default function ObservatoryScreen() {
     const diffHrs = Math.floor(diffMs / 3600000);
     const diffDays = Math.floor(diffMs / 86400000);
 
-    if (diffMin < 1) return 'Justo ahora';
-    if (diffMin < 60) return `Hace ${diffMin} min`;
-    if (diffHrs < 24) return `Hace ${diffHrs}h`;
-    if (diffDays < 7) return `Hace ${diffDays}d`;
-    return date.toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });
+    if (diffMin < 1) return i18n.t('common.justNow');
+    if (diffMin < 60) return i18n.t('common.minutesAgo').replace('{{count}}', String(diffMin));
+    if (diffHrs < 24) return i18n.t('common.hoursAgo').replace('{{count}}', String(diffHrs));
+    if (diffDays < 7) return i18n.t('common.daysAgo').replace('{{count}}', String(diffDays));
+    return date.toLocaleDateString(i18n.locale === 'es' ? 'es-VE' : 'en-US', { day: 'numeric', month: 'short' });
   };
 
   const navigateToProfile = (userId: string) => {
@@ -254,74 +439,96 @@ export default function ObservatoryScreen() {
     router.push({ pathname: '/user-profile', params: { userId } });
   };
 
+  const fetchPostComments = async (postId: string) => {
+    const { data } = await supabase.from('post_comments').select('*').eq('publicacion_id', postId).order('created_at', { ascending: true });
+    if (data) {
+      const authorIds = [...new Set(data.map(c => c.usuario_id))];
+      const { data: profiles } = await supabase.from('perfiles').select('id, username, nombre, foto_perfil').in('id', authorIds);
+      const pMap = new Map((profiles || []).map(p => [p.id, p]));
+      setPostComments(prev => ({ ...prev, [postId]: data.map(c => ({ ...c, perfil: pMap.get(c.usuario_id) || { username: 'Usuario' } })) }));
+    }
+  };
+
+  const toggleCommentSection = (postId: string) => {
+    if (activeCommentPost === postId) {
+      setActiveCommentPost(null);
+      activeCommentPostRef.current = null;
+    } else {
+      setActiveCommentPost(postId);
+      activeCommentPostRef.current = postId;
+      if (!postComments[postId]) fetchPostComments(postId);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={[styles.customHeader, { backgroundColor: '#f9fafb' }]}>
-        <Text style={styles.customHeaderTitle}>Observatorio</Text>
+    <View style={[styles.container, { backgroundColor: theme.background }]}> 
+      <View style={[styles.customHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+        <Text style={[styles.customHeaderTitle, { color: theme.text }]}>{i18n.t('observatory.title')}</Text>
       </View>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2e7d32" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />
         }
       >
         {/* Transmisión en Vivo */}
-        <Text style={styles.sectionTitle}>Transmisión en Vivo</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>{i18n.t('observatory.liveStream')}</Text>
         <View style={styles.liveCameraFrame}>
           <View style={styles.livePlaceholder}>
-            <Text style={styles.livePlaceholderText}>Transmisión desconectada</Text>
+            <Text style={styles.livePlaceholderText}>{i18n.t('observatory.disconnected')}</Text>
           </View>
 
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
-            <Text style={styles.liveText}>DESCONECTADO</Text>
+            <Text style={styles.liveText}>{i18n.t('observatory.disconnectedBadge')}</Text>
           </View>
         </View>
 
 
         {/* Sección de Comunidad */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitleCommunity}>Comunidad</Text>
+          <Text style={[styles.sectionTitleCommunity, { color: theme.text }]}>{i18n.t('observatory.community')}</Text>
           <TouchableOpacity
             style={styles.createPostBtn}
             onPress={() => setIsCreatingPost(!isCreatingPost)}
           >
             <Text style={styles.createPostBtnText}>
-              {isCreatingPost ? 'Cancelar' : '+ Publicar'}
+              {isCreatingPost ? i18n.t('observatory.cancel') : i18n.t('observatory.publish')}
             </Text>
           </TouchableOpacity>
         </View>
 
         {isCreatingPost && (
-          <View style={styles.createPostForm}>
+          <View style={[styles.createPostForm, { backgroundColor: theme.card, borderColor: theme.border }]}> 
             <TextInput
-              style={styles.inputTitle}
-              placeholder="Título de la publicación..."
+              style={[styles.inputTitle, { color: theme.text, borderBottomColor: theme.border }]}
+              placeholder={i18n.t('observatory.postTitlePlaceholder')}
               value={newPostTitle}
               onChangeText={setNewPostTitle}
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.placeholder}
               editable={!publishing}
             />
             <TextInput
-              style={styles.inputDesc}
-              placeholder="Escribe los detalles aquí..."
+              style={[styles.inputDesc, { color: theme.text, backgroundColor: theme.inputBackground }]}
+              placeholder={i18n.t('observatory.postDescPlaceholder')}
               multiline
               numberOfLines={3}
               value={newPostDesc}
               onChangeText={setNewPostDesc}
-              placeholderTextColor="#999"
+              placeholderTextColor={theme.placeholder}
               editable={!publishing}
             />
             <TouchableOpacity
-              style={[styles.submitBtn, publishing && { opacity: 0.6 }]}
+              style={[styles.submitBtn, { backgroundColor: theme.primary }, publishing && { opacity: 0.6 }]}
               onPress={handleCreatePost}
               disabled={publishing}
             >
               {publishing ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={theme.primaryText} />
               ) : (
-                <Text style={styles.submitBtnText}>Publicar</Text>
+                <Text style={styles.submitBtnText}>{i18n.t('observatory.submitPost')}</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -329,15 +536,15 @@ export default function ObservatoryScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2e7d32" />
+            <ActivityIndicator size="large" color={theme.primary} />
           </View>
         ) : posts.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubbles-outline" size={56} color="#ccc" />
-            <Text style={styles.emptyText}>No hay publicaciones aún.</Text>
-            <Text style={styles.emptySubtext}>¡Sé el primero en compartir algo!</Text>
+            <Ionicons name="chatbubbles-outline" size={56} color={theme.subtext} />
+            <Text style={[styles.emptyText, { color: theme.text }]}>{i18n.t('observatory.emptyFeed')}</Text>
+            <Text style={[styles.emptySubtext, { color: theme.subtext }]}>{i18n.t('observatory.emptyFeedHint')}</Text>
             <TouchableOpacity style={styles.retryBtn} onPress={onRefresh}>
-              <Text style={styles.retryBtnText}>Actualizar</Text>
+              <Text style={styles.retryBtnText}>{i18n.t('observatory.refresh')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -348,7 +555,7 @@ export default function ObservatoryScreen() {
               const isOwner = post.usuario_id === currentUserId;
 
               return (
-                <View key={post.id} style={styles.postCard}>
+                <View key={post.id} style={[styles.postCard, { backgroundColor: theme.card, borderColor: theme.border }]}> 
                   <View style={styles.postHeader}>
                     <TouchableOpacity
                       style={styles.postHeaderLeft}
@@ -358,15 +565,15 @@ export default function ObservatoryScreen() {
                       {hasPhoto ? (
                         <Image source={{ uri: perfil.foto_perfil! }} style={styles.postAvatar} />
                       ) : (
-                        <View style={[styles.postAvatar, styles.avatarPlaceholder]}>
-                          <Ionicons name="person" size={18} color="#ccc" />
+                        <View style={[styles.postAvatar, styles.avatarPlaceholder, { backgroundColor: theme.inputBackground }]}> 
+                          <Ionicons name="person" size={18} color={theme.muted} />
                         </View>
                       )}
                       <View style={styles.postUserInfo}>
-                        <Text style={styles.postUserName}>
+                        <Text style={[styles.postUserName, { color: theme.text }]}> 
                           {perfil?.username || perfil?.nombre || 'Usuario'}
                         </Text>
-                        <Text style={styles.postTime}>{getTimeAgo(post.created_at)}</Text>
+                        <Text style={[styles.postTime, { color: theme.muted }]}>{getTimeAgo(post.created_at)}</Text>
                       </View>
                     </TouchableOpacity>
                     {isOwner ? (
@@ -388,13 +595,75 @@ export default function ObservatoryScreen() {
                           styles.followBtnText,
                           followingIds.has(post.usuario_id) && styles.followingBtnText,
                         ]}>
-                          {followingIds.has(post.usuario_id) ? 'Siguiendo' : 'Seguir'}
+                          {followingIds.has(post.usuario_id) ? i18n.t('observatory.followingBtn') : i18n.t('observatory.followBtn')}
                         </Text>
                       </TouchableOpacity>
                     )}
                   </View>
-                  <Text style={styles.postTitle}>{post.titulo}</Text>
-                  <Text style={styles.postDescription}>{post.descripcion}</Text>
+                  <Text style={[styles.postTitle, { color: theme.text }]}>{post.titulo}</Text>
+                  <Text style={[styles.postDescription, { color: theme.subtext }]}>{post.descripcion}</Text>
+
+                  <View style={styles.postActionsRow}>
+                    <TouchableOpacity
+                      style={[styles.iconActionBtn, post.likedByMe ? styles.iconActionBtnActive : null]}
+                      onPress={() => handleToggleLike(post.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name={post.likedByMe ? 'heart' : 'heart-outline'} size={18} color={post.likedByMe ? '#ec4899' : theme.text} />
+                      <Text style={[styles.iconActionText, { color: theme.text }]}>{post.likesCount}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.iconActionBtn}
+                      onPress={() => toggleCommentSection(post.id)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.text} />
+                      <Text style={[styles.iconActionText, { color: theme.text }]}>{post.commentsCount}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {activeCommentPost === post.id && (
+                    <View style={[styles.commentBox, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                      {/* Lista de comentarios existentes */}
+                      {(postComments[post.id] || []).map((comment: any) => (
+                        <View key={comment.id} style={{ flexDirection: 'row', marginBottom: 8, gap: 8 }}>
+                          <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.inputBackground, justifyContent: 'center', alignItems: 'center', overflow: 'hidden' }}>
+                            {comment.perfil?.foto_perfil && !comment.perfil.foto_perfil.includes('unsplash') ? (
+                              <Image source={{ uri: comment.perfil.foto_perfil }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                            ) : (
+                              <Ionicons name="person" size={14} color={theme.muted} />
+                            )}
+                          </View>
+                          <View style={{ flex: 1, backgroundColor: theme.card, borderRadius: 12, padding: 8, paddingHorizontal: 12 }}>
+                            <Text style={{ fontSize: 12, fontWeight: 'bold', color: theme.text, marginBottom: 2 }}>{comment.perfil?.username || 'Usuario'}</Text>
+                            <Text style={{ fontSize: 13, color: theme.subtext, lineHeight: 18 }}>{comment.comentario}</Text>
+                            <Text style={{ fontSize: 10, color: theme.muted, marginTop: 4 }}>{getTimeAgo(comment.created_at)}</Text>
+                          </View>
+                        </View>
+                      ))}
+
+                      <TextInput
+                        style={[styles.commentInput, { color: theme.text, backgroundColor: theme.card, borderColor: theme.border }]}
+                        placeholder={i18n.t('observatory.writeComment')}
+                        placeholderTextColor={theme.placeholder}
+                        value={commentInputs[post.id] || ''}
+                        onChangeText={(value) => setCommentInputs((prev) => ({ ...prev, [post.id]: value }))}
+                        multiline
+                        numberOfLines={2}
+                      />
+                      <TouchableOpacity
+                        style={[styles.commentSubmitBtn, { backgroundColor: theme.primary }]}
+                        onPress={() => handleSubmitComment(post.id)}
+                        disabled={submittingCommentId === post.id}
+                      >
+                        {submittingCommentId === post.id ? (
+                          <ActivityIndicator size="small" color={theme.primaryText} />
+                        ) : (
+                          <Text style={[styles.commentSubmitText, { color: theme.primaryText }]}>{i18n.t('observatory.sendComment')}</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })}
@@ -654,6 +923,54 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#555',
     lineHeight: 22,
+  },
+  postActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 14,
+  },
+  iconActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  iconActionBtnActive: {
+    backgroundColor: 'rgba(236, 72, 153, 0.12)',
+  },
+  iconActionText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  commentBox: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  commentInput: {
+    minHeight: 48,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    backgroundColor: 'transparent',
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  commentSubmitBtn: {
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  commentSubmitText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   followBtn: {
     paddingHorizontal: 14,

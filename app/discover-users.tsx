@@ -23,6 +23,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { discoverUsers, searchUsers, followUser, unfollowUser, getFollowingIds } from '../lib/follows';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -37,6 +39,7 @@ type UserProfile = {
 
 export default function DiscoverUsersScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -125,34 +128,34 @@ export default function DiscoverUsersScreen() {
     const hasPhoto = item.foto_perfil && !item.foto_perfil.includes('images.unsplash.com');
 
     return (
-      <TouchableOpacity style={styles.userCard} onPress={() => navigateToProfile(item.id)} activeOpacity={0.7}>
+      <TouchableOpacity style={[styles.userCard, { borderBottomColor: theme.border }]} onPress={() => navigateToProfile(item.id)} activeOpacity={0.7}>
         <View style={styles.userInfo}>
           {hasPhoto ? (
             <Image source={{ uri: item.foto_perfil! }} style={styles.avatar} />
           ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Ionicons name="person" size={24} color="#ccc" />
+            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: theme.inputBackground }]}>
+              <Ionicons name="person" size={24} color={theme.muted} />
             </View>
           )}
           <View style={styles.textContainer}>
-            <Text style={styles.username} numberOfLines={1}>{item.username || item.nombre}</Text>
+            <Text style={[styles.username, { color: theme.text }]} numberOfLines={1}>{item.username || item.nombre}</Text>
             {item.descripcion ? (
-              <Text style={styles.description} numberOfLines={1}>{item.descripcion}</Text>
+              <Text style={[styles.description, { color: theme.subtext }]} numberOfLines={1}>{item.descripcion}</Text>
             ) : null}
           </View>
         </View>
 
         <TouchableOpacity
-          style={[styles.followButton, isFollowing && styles.followingButton]}
+          style={[styles.followButton, { backgroundColor: theme.primary }, isFollowing && { backgroundColor: theme.inputBackground, borderWidth: 1, borderColor: theme.border }]}
           onPress={() => toggleFollow(item.id)}
           disabled={isToggling}
           activeOpacity={0.7}
         >
           {isToggling ? (
-            <ActivityIndicator size="small" color={isFollowing ? '#555' : '#fff'} />
+            <ActivityIndicator size="small" color={isFollowing ? theme.subtext : theme.primaryText} />
           ) : (
-            <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
-              {isFollowing ? 'Siguiendo' : 'Seguir'}
+            <Text style={[styles.followButtonText, { color: theme.primaryText }, isFollowing && { color: theme.subtext }]}>
+              {isFollowing ? i18n.t('social.following') : i18n.t('social.follow')}
             </Text>
           )}
         </TouchableOpacity>
@@ -161,23 +164,23 @@ export default function DiscoverUsersScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Descubrir Usuarios</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{i18n.t('social.discoverUsers')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {/* Barra de búsqueda */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#999" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: theme.inputBackground }]}>
+        <Ionicons name="search" size={20} color={theme.muted} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar por nombre de usuario..."
-          placeholderTextColor="#999"
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder={i18n.t('social.searchByUsername')}
+          placeholderTextColor={theme.placeholder}
           value={searchQuery}
           onChangeText={handleSearch}
           autoCapitalize="none"
@@ -185,7 +188,7 @@ export default function DiscoverUsersScreen() {
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => { setSearchQuery(''); if (currentUserId) loadUsers(currentUserId, ''); }}>
-            <Ionicons name="close-circle" size={20} color="#999" />
+            <Ionicons name="close-circle" size={20} color={theme.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -193,13 +196,13 @@ export default function DiscoverUsersScreen() {
       {/* Lista de usuarios */}
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#2e7d32" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : users.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="people-outline" size={60} color="#ddd" />
-          <Text style={styles.emptyText}>
-            {searchQuery ? 'No se encontraron usuarios' : 'No hay usuarios para descubrir'}
+          <Ionicons name="people-outline" size={60} color={theme.muted} />
+          <Text style={[styles.emptyText, { color: theme.muted }]}>
+            {searchQuery ? i18n.t('social.noUsersFound') : i18n.t('social.noUsersDiscover')}
           </Text>
         </View>
       ) : (

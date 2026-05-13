@@ -13,9 +13,12 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 export default function Scanner() {
   const router = useRouter();
+  const { theme } = useTheme();
 
   const handlePick = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -27,7 +30,6 @@ export default function Scanner() {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
 
-    // Navegar al flujo de carga (que abrirá el mapa y luego guardará)
     router.push({
       pathname: '/create-record',
       params: {
@@ -38,19 +40,19 @@ export default function Scanner() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.badge}>
-        <Ionicons name="desktop-outline" size={13} color="#004d40" />
-      </View>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
 
       <View style={styles.idleView}>
-        <Text style={styles.title}>Cargar Registro</Text>
-        <Text style={styles.subtitle}>
-          Sube una foto para identificar y registrar una especie de la Guayana Venezolana.
+        <Text style={[styles.title, { color: theme.text }]}>{i18n.t('scanner.uploadRecord')}</Text>
+        <Text style={[styles.subtitle, { color: theme.subtext }]}>
+          {i18n.t('scanner.scanCaption')}
         </Text>
-        <TouchableOpacity style={styles.uploadBtn} onPress={handlePick}>
-          <Ionicons name="cloud-upload" size={48} color="#004d40" />
-          <Text style={styles.uploadText}>Seleccionar Archivo</Text>
+        <TouchableOpacity
+          style={[styles.uploadBtn, { backgroundColor: theme.card, borderColor: theme.primary }]}
+          onPress={handlePick}
+        >
+          <Ionicons name="cloud-upload" size={48} color={theme.primary} />
+          <Text style={[styles.uploadText, { color: theme.primary }]}>{i18n.t('scanner.chooseGallery')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -58,13 +60,12 @@ export default function Scanner() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb', padding: 20, justifyContent: 'center', alignItems: 'center' },
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#e0f2f1', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 24 },
-  badgeText: { color: '#004d40', fontSize: 11, fontWeight: 'bold', letterSpacing: 1 },
+  container: { flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center' },
+  badge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, marginBottom: 24 },
 
   idleView: { alignItems: 'center', gap: 16 },
-  title: { fontSize: 28, fontWeight: 'bold', color: '#111' },
-  subtitle: { fontSize: 16, color: '#666', textAlign: 'center', maxWidth: 400, marginBottom: 12 },
-  uploadBtn: { width: 300, height: 200, backgroundColor: '#fff', borderRadius: 24, justifyContent: 'center', alignItems: 'center', gap: 12, borderColor: '#004d40', borderStyle: 'dashed', borderWidth: 2 },
-  uploadText: { color: '#004d40', fontWeight: 'bold', fontSize: 18 },
+  title: { fontSize: 28, fontWeight: 'bold' },
+  subtitle: { fontSize: 16, textAlign: 'center', maxWidth: 400, marginBottom: 12 },
+  uploadBtn: { width: 300, height: 200, borderRadius: 24, justifyContent: 'center', alignItems: 'center', gap: 12, borderStyle: 'dashed', borderWidth: 2 },
+  uploadText: { fontWeight: 'bold', fontSize: 18 },
 });

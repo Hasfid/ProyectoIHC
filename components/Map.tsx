@@ -26,6 +26,8 @@ import { GUAYANA_POLYGON } from '../lib/geofence';
 
 const GUAYANA_REGION = GUAYANA_POLYGON;
 
+const GUAYANA_LABEL_POSITION = { latitude: 6.2, longitude: -63.5 };
+
 const WORLD_REGION = [
   { latitude: 90, longitude: -180 },
   { latitude: 90, longitude: 180 },
@@ -105,6 +107,7 @@ const offsetOverlappingRecords = (records: any[]) => {
 export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
   const [records, setRecords] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
+  const [currentRegion, setCurrentRegion] = useState(INITIAL_REGION);
   const mapRef = useRef<MapView>(null);
 
   useEffect(() => {
@@ -144,15 +147,28 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
         mapType="satellite"
         maxZoomLevel={18}
         minZoomLevel={3}
-        onRegionChangeComplete={onRegionChangeComplete}
+        onRegionChangeComplete={(region) => {
+          setCurrentRegion(region);
+          if (onRegionChangeComplete) onRegionChangeComplete(region);
+        }}
         onPress={closeCard}
       >
-        {/* ── Máscara: oscurece la Guayana y deja el resto claro ── */}
+        {/* ── Máscara: oscurece el exterior de la Guayana y mantiene el interior claro ── */}
         <Polygon
-          coordinates={GUAYANA_REGION}
+          coordinates={WORLD_REGION}
+          holes={[GUAYANA_REGION]}
           fillColor="rgba(0, 0, 0, 0.55)"
           strokeColor="rgba(0, 0, 0, 0)"
         />
+
+        {/* ── Etiqueta flotante que solo se muestra desde una vista elevada */}
+        {currentRegion.latitudeDelta >= 3.0 && (
+          <Marker coordinate={GUAYANA_LABEL_POSITION} tracksViewChanges={false} tappable={false} anchor={{ x: 0.5, y: 0.5 }}>
+            <View style={s.guayanaLabel} pointerEvents="none">
+              <Text style={s.guayanaLabelText}>Guayana Venezolana</Text>
+            </View>
+          </Marker>
+        )}
 
         {/* ── Contorno neón esmeralda de la Guayana ── */}
         <Polygon
@@ -371,6 +387,28 @@ const s = StyleSheet.create({
     borderColor: 'rgba(52,211,153,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  guayanaLabel: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 18,
+    backgroundColor: 'rgba(8, 14, 20, 0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 18,
+    elevation: 8,
+  },
+  guayanaLabelText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
   cardTitle: {
     color: '#fff',

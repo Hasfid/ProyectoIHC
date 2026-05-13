@@ -18,10 +18,13 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../lib/supabase';
 import { useFocusEffect } from 'expo-router';
+import { useTheme } from '../../lib/theme';
+import { i18n } from '../../lib/i18n';
 
 type FilterType = 'Todos' | 'Animales' | 'Plantas';
 
 export default function RecordsScreen() {
+  const { theme } = useTheme();
   const [records, setRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>('Todos');
@@ -233,13 +236,18 @@ export default function RecordsScreen() {
 
   const renderFilterChip = (type: FilterType) => {
     const isSelected = filter === type;
+    const labelMap: Record<FilterType, string> = {
+      'Todos': i18n.t('common.all'),
+      'Animales': i18n.t('common.animals'),
+      'Plantas': i18n.t('common.plants'),
+    };
     return (
       <TouchableOpacity 
         onPress={() => setFilter(type)}
-        style={[styles.chip, isSelected && styles.chipSelected]}
+        style={[styles.chip, { backgroundColor: theme.inputBackground }, isSelected && { backgroundColor: theme.mode === 'dark' ? 'rgba(52,211,153,0.15)' : '#e8f5e9' }]}
       >
-        <Text style={[styles.chipText, isSelected && styles.chipTextSelected]}>
-          {type}
+        <Text style={[styles.chipText, { color: theme.muted }, isSelected && { color: theme.primary }]}>
+          {labelMap[type]}
         </Text>
       </TouchableOpacity>
     );
@@ -280,24 +288,24 @@ export default function RecordsScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Registros</Text>
-        <Text style={styles.headerSubtitle}>Descubrimientos de los usuarios</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{i18n.t('records.title')}</Text>
+        <Text style={[styles.headerSubtitle, { color: theme.subtext }]}>{i18n.t('records.subtitle')}</Text>
       </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#666" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: theme.inputBackground }]}>
+        <Ionicons name="search" size={20} color={theme.muted} style={styles.searchIcon} />
         <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar especie o nombre..."
-          placeholderTextColor="rgba(255,255,255,0.4)"
+          style={[styles.searchInput, { color: theme.text }]}
+          placeholder={i18n.t('records.searchPlaceholder')}
+          placeholderTextColor={theme.placeholder}
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.4)" />
+            <Ionicons name="close-circle" size={20} color={theme.muted} />
           </TouchableOpacity>
         )}
       </View>
@@ -310,13 +318,13 @@ export default function RecordsScreen() {
 
       {loading ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#a4ff44" />
-          <Text style={styles.loadingText}>Sincronizando hallazgos...</Text>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.loadingText, { color: theme.primary }]}>{i18n.t('records.syncing')}</Text>
         </View>
       ) : filteredRecords.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Ionicons name="leaf-outline" size={64} color="rgba(164, 255, 68, 0.4)" />
-          <Text style={styles.emptyText}>No hay descubrimientos aquí aún.</Text>
+          <Ionicons name="leaf-outline" size={64} color={theme.mode === 'dark' ? 'rgba(52,211,153,0.4)' : 'rgba(46,125,50,0.3)'} />
+          <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('records.empty')}</Text>
         </View>
       ) : (
         <FlatList

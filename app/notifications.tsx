@@ -21,6 +21,8 @@ import {
 import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 /** Estructura de una notificación del sistema */
 type Notificacion = {
@@ -34,6 +36,7 @@ type Notificacion = {
 
 export default function NotificationsScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
   const [notifications, setNotifications] = useState<Notificacion[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -212,30 +215,32 @@ export default function NotificationsScreen() {
 
     return (
       <TouchableOpacity 
-        style={[styles.notificationItem, !item.leido && styles.unreadItem]}
+        style={[styles.notificationItem, { borderBottomColor: theme.border }, !item.leido && { backgroundColor: theme.card }]}
         onPress={() => handleNotificationPress(item)}
       >
         <View style={[styles.iconContainer, { backgroundColor: getIconColor(item.tipo) + '20' }]}>
           <Ionicons name={getIcon(item.tipo)} size={24} color={getIconColor(item.tipo)} />
         </View>
         <View style={styles.content}>
-          <Text style={[styles.title, !item.leido && styles.unreadText]}>{item.titulo}</Text>
-          <Text style={styles.message}>{displayMessage}</Text>
-          <Text style={styles.time}>{new Date(item.created_at).toLocaleString()}</Text>
+          <Text style={[styles.title, { color: theme.text }, !item.leido && { fontWeight: 'bold' }]}>{item.titulo}</Text>
+          <Text style={[styles.message, { color: theme.subtext }]}>{displayMessage}</Text>
+          <Text style={[styles.time, { color: theme.muted }]}>{new Date(item.created_at).toLocaleString()}</Text>
         </View>
-        {!item.leido && <View style={styles.unreadDot} />}
+        {!item.leido && <View style={[styles.unreadDot, { backgroundColor: theme.primary }]} />}
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen 
         options={{ 
-          headerTitle: 'Notificaciones',
+          headerTitle: i18n.t('notifications.title'),
+          headerStyle: { backgroundColor: theme.surface },
+          headerTintColor: theme.text,
           headerLeft: () => (
             <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: 10 }}>
-              <Ionicons name="chevron-back" size={28} color="#004d40" />
+              <Ionicons name="chevron-back" size={28} color={theme.primary} />
             </TouchableOpacity>
           ),
           headerShadowVisible: false,
@@ -244,19 +249,19 @@ export default function NotificationsScreen() {
 
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color="#004d40" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : notifications.length === 0 ? (
         <View style={styles.center}>
-          <Ionicons name="notifications-off-outline" size={80} color="#ccc" />
-          <Text style={styles.emptyText}>No tienes notificaciones aún.</Text>
+          <Ionicons name="notifications-off-outline" size={80} color={theme.muted} />
+          <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('notifications.empty')}</Text>
         </View>
       ) : (
         <FlatList
           data={notifications}
           keyExtractor={item => item.id}
           renderItem={renderItem}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           contentContainerStyle={styles.listContent}
         />
       )}

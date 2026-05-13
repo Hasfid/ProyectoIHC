@@ -31,6 +31,8 @@ const WORLD_BOUNDS: [number, number][] = [
   [90, 180],
 ];
 
+const GUAYANA_CENTER: [number, number] = [5.79, -61.55];
+
 /** Zoom de inicio (vista general del mapa) */
 const MAP_ZOOM_START = 5;
 
@@ -207,6 +209,7 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
   const [cssReady, setCssReady] = useState(false);
+  const [showGuayanaLabel, setShowGuayanaLabel] = useState(true);
 
   useEffect(() => {
     // Esperar a que el CSS de Leaflet esté cargado para evitar FOUC
@@ -281,14 +284,25 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
 
   /** Listener de movimiento para el callback externo */
   const MapEventsComponent = () => {
-    useMapEvents({
+    const map = useMapEvents({
       moveend: (e: any) => {
         if (onRegionChangeComplete) {
           const center = e.target.getCenter();
           onRegionChangeComplete({ latitude: center.lat, longitude: center.lng });
         }
       },
+      zoomend: () => {
+        const zoom = map.getZoom();
+        setShowGuayanaLabel(zoom <= 8.5);
+      },
     });
+
+    useEffect(() => {
+      if (map) {
+        setShowGuayanaLabel(map.getZoom() <= 8.5);
+      }
+    }, [map]);
+
     return null;
   };
 
@@ -393,13 +407,14 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
           maxZoom={18}
         />
 
-        {/* ── Máscara: oscurece la Guayana y deja el resto claro ── */}
+        {/* ── Máscara: oscurece el exterior de la Guayana y mantiene el interior claro ── */}
         <Polygon
-          positions={GUAYANA_POLYGON}
+          positions={[WORLD_BOUNDS, GUAYANA_POLYGON]}
           pathOptions={{
             fillColor: '#000000',
             fillOpacity: 0.55,
             stroke: false,
+            fillRule: 'evenOdd',
           }}
         />
 
@@ -415,6 +430,35 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
             dashArray: '6, 4',    /* línea punteada sutil */
           }}
         />
+
+        {/* ── Etiqueta flotante que desaparece al acercarse */}
+        {showGuayanaLabel && (
+          <Marker
+            position={GUAYANA_CENTER}
+            icon={L.divIcon({
+              className: 'guayana-label-icon',
+              html: `
+                <div style="
+                  background: rgba(8, 14, 20, 0.92);
+                  color: white;
+                  padding: 10px 16px;
+                  border-radius: 16px;
+                  border: 1px solid rgba(52,211,153,0.35);
+                  box-shadow: 0 18px 32px rgba(0,0,0,0.45);
+                  font-weight: 700;
+                  font-size: 14px;
+                  letter-spacing: 0.4px;
+                  text-transform: uppercase;
+                  white-space: nowrap;
+                ">
+                  Guayana Venezolana
+                </div>
+              `,
+              iconSize: [220, 40],
+              iconAnchor: [110, 0],
+            })}
+          />
+        )}
 
         {/* ── Marcadores de registros (datos de Supabase) ── */}
         {records.map((record: any) => {

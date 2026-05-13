@@ -4,15 +4,16 @@
  * Muestra el mapa interactivo de avistamientos y un acceso rápido al chat.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, TouchableOpacity, Text, Platform } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BlurView } from 'expo-blur';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
 import { supabase } from '../../lib/supabase';
+import { useTheme } from '../../lib/theme';
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -61,8 +62,10 @@ export default function DiscoverScreen() {
     return () => clearInterval(interval);
   }, []);
 
+  const { theme } = useTheme();
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}> 
 
       <Map />
 
@@ -71,12 +74,12 @@ export default function DiscoverScreen() {
       {Platform.OS !== 'web' && (
         <View style={styles.floatingButtonContainer}>
           <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
-            <BlurView intensity={90} tint="light" style={styles.blurContainer}>
-              <Ionicons name="chatbubbles" size={28} color="#004d40" style={styles.icon} />
+            <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}> 
+              <Ionicons name="chatbubbles" size={28} color={theme.primary} style={styles.icon} />
             </BlurView>
           </TouchableOpacity>
           {unreadMessages > 0 && (
-            <View style={styles.chatBadge}>
+            <View style={[styles.chatBadge, { borderColor: theme.background }]}>
               <Text style={styles.chatBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
             </View>
           )}

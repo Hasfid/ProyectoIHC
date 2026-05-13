@@ -21,6 +21,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { getFollowers, getFollowing, followUser, unfollowUser, getFollowingIds } from '../lib/follows';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 /** Usuario en una lista de seguidores/seguidos */
 type FollowUser = {
@@ -34,6 +36,7 @@ type FollowUser = {
 
 export default function FollowersListScreen() {
   const router = useRouter();
+  const { theme } = useTheme();
   const { userId, type } = useLocalSearchParams<{ userId: string; type: 'followers' | 'following' }>();
   const [users, setUsers] = useState<FollowUser[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
@@ -41,7 +44,7 @@ export default function FollowersListScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [togglingFollow, setTogglingFollow] = useState<Set<string>>(new Set());
 
-  const title = type === 'followers' ? 'Seguidores' : 'Seguidos';
+  const title = type === 'followers' ? i18n.t('social.followers') : i18n.t('social.following');
 
   useEffect(() => {
     if (userId && type) loadData();
@@ -112,35 +115,35 @@ export default function FollowersListScreen() {
     const hasPhoto = item.foto_perfil && !item.foto_perfil.includes('images.unsplash.com');
 
     return (
-      <TouchableOpacity style={styles.userCard} onPress={() => navigateToProfile(item.id)} activeOpacity={0.7}>
+      <TouchableOpacity style={[styles.userCard, { borderBottomColor: theme.border }]} onPress={() => navigateToProfile(item.id)} activeOpacity={0.7}>
         <View style={styles.userInfo}>
           {hasPhoto ? (
             <Image source={{ uri: item.foto_perfil! }} style={styles.avatar} />
           ) : (
-            <View style={[styles.avatar, styles.avatarPlaceholder]}>
-              <Ionicons name="person" size={22} color="#ccc" />
+            <View style={[styles.avatar, styles.avatarPlaceholder, { backgroundColor: theme.inputBackground }]}>
+              <Ionicons name="person" size={22} color={theme.muted} />
             </View>
           )}
           <View style={styles.textContainer}>
-            <Text style={styles.username} numberOfLines={1}>{item.username || item.nombre}</Text>
+            <Text style={[styles.username, { color: theme.text }]} numberOfLines={1}>{item.username || item.nombre}</Text>
             {item.descripcion ? (
-              <Text style={styles.description} numberOfLines={1}>{item.descripcion}</Text>
+              <Text style={[styles.description, { color: theme.subtext }]} numberOfLines={1}>{item.descripcion}</Text>
             ) : null}
           </View>
         </View>
 
         {!isMe && (
           <TouchableOpacity
-            style={[styles.followButton, isFollowing && styles.followingButton]}
+            style={[styles.followButton, { backgroundColor: theme.primary }, isFollowing && { backgroundColor: theme.inputBackground, borderWidth: 1, borderColor: theme.border }]}
             onPress={() => toggleFollow(item.id)}
             disabled={isToggling}
             activeOpacity={0.7}
           >
             {isToggling ? (
-              <ActivityIndicator size="small" color={isFollowing ? '#555' : '#fff'} />
+              <ActivityIndicator size="small" color={isFollowing ? theme.subtext : theme.primaryText} />
             ) : (
-              <Text style={[styles.followButtonText, isFollowing && styles.followingButtonText]}>
-                {isFollowing ? 'Siguiendo' : 'Seguir'}
+              <Text style={[styles.followButtonText, { color: theme.primaryText }, isFollowing && { color: theme.subtext }]}>
+                {isFollowing ? i18n.t('social.following') : i18n.t('social.follow')}
               </Text>
             )}
           </TouchableOpacity>
@@ -150,25 +153,25 @@ export default function FollowersListScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#111" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{title}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>{title}</Text>
         <View style={{ width: 40 }} />
       </View>
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#2e7d32" />
+          <ActivityIndicator size="large" color={theme.primary} />
         </View>
       ) : users.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="people-outline" size={60} color="#ddd" />
-          <Text style={styles.emptyText}>
-            {type === 'followers' ? 'Aún no tiene seguidores' : 'Aún no sigue a nadie'}
+          <Ionicons name="people-outline" size={60} color={theme.muted} />
+          <Text style={[styles.emptyText, { color: theme.muted }]}>
+            {type === 'followers' ? i18n.t('social.noFollowers') : i18n.t('social.noFollowing')}
           </Text>
         </View>
       ) : (

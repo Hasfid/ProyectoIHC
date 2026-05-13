@@ -7,21 +7,25 @@
  * @module app/user-profile
  */
 
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  ActivityIndicator,
-  Dimensions,
-} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { checkIsFollowing, followUser, unfollowUser } from '../lib/follows';
 import { supabase } from '../lib/supabase';
-import { followUser, unfollowUser, checkIsFollowing } from '../lib/follows';
+import { useTheme } from '../lib/theme';
+import { i18n } from '../lib/i18n';
 
 const { width } = Dimensions.get('window');
 
@@ -34,6 +38,7 @@ const { width } = Dimensions.get('window');
  * También integra las pestañas de actividad (registros biológicos y posts).
  */
 export default function UserProfileScreen() {
+  const { theme } = useTheme();
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
   
@@ -60,6 +65,12 @@ export default function UserProfileScreen() {
   
   /** Pestaña activa en la sección de contenido inferior */
   const [activeTab, setActiveTab] = useState<'records' | 'community'>('records');
+
+  // --- Like / Comment state ---
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [activeCommentPost, setActiveCommentPost] = useState<string | null>(null);
+  const [submittingComment, setSubmittingComment] = useState<string | null>(null);
+  const [postComments, setPostComments] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
     if (actualUserId) {
@@ -115,7 +126,33 @@ export default function UserProfileScreen() {
       const recordsData = recordsRes.data || [];
       const postsData = postsRes.data || [];
       setUserRecords(recordsData);
-      setUserPosts(postsData);
+
+      // Enriquecer publicaciones con likes y comentarios
+      if (postsData.length > 0) {
+        const postIds = postsData.map(p => p.id);
+        const [{ data: likesData }, { data: commentsData }] = await Promise.all([
+          supabase.from('post_likes').select('publicacion_id, usuario_id').in('publicacion_id', postIds),
+          supabase.from('post_comments').select('publicacion_id').in('publicacion_id', postIds),
+        ]);
+        const likeCounts = new Map<string, number>();
+        const commentCounts = new Map<string, number>();
+        const likedByMe = new Set<string>();
+        (likesData || []).forEach((like: any) => {
+          likeCounts.set(like.publicacion_id, (likeCounts.get(like.publicacion_id) || 0) + 1);
+          if (myId && like.usuario_id === myId) likedByMe.add(like.publicacion_id);
+        });
+        (commentsData || []).forEach((c: any) => {
+          commentCounts.set(c.publicacion_id, (commentCounts.get(c.publicacion_id) || 0) + 1);
+        });
+        setUserPosts(postsData.map(post => ({
+          ...post,
+          likesCount: likeCounts.get(post.id) ?? 0,
+          commentsCount: commentCounts.get(post.id) ?? 0,
+          likedByMe: likedByMe.has(post.id),
+        })));
+      } else {
+        setUserPosts([]);
+      }
 
       // Stats
       const [followersRes, followingRes] = await Promise.all([
@@ -168,19 +205,74 @@ export default function UserProfileScreen() {
     router.push({ pathname: '/social', params: { userId: actualUserId!, tab: type } });
   };
 
+  const handleToggleLike = async (postId: string) => {
+    if (!currentUserId) { Alert.alert('Inicia sesión para dar like'); return; }
+    const post = userPosts.find(p => p.id === postId);
+    if (!post) return;
+    try {
+      if (post.likedByMe) {
+        await supabase.from('post_likes').delete().eq('publicacion_id', postId).eq('usuario_id', currentUserId);
+      } else {
+        await supabase.from('post_likes').insert({ publicacion_id: postId, usuario_id: currentUserId });
+      }
+      setUserPosts(current => current.map(item => item.id === postId
+        ? { ...item, likedByMe: !item.likedByMe, likesCount: item.likesCount + (item.likedByMe ? -1 : 1) }
+        : item
+      ));
+    } catch (err) { console.error('Like error:', err); }
+  };
+
+  const handleSubmitComment = async (postId: string) => {
+    const text = (commentInputs[postId] || '').trim();
+    if (!text || !currentUserId) return;
+    setSubmittingComment(postId);
+    try {
+      const { error } = await supabase.from('post_comments').insert({ publicacion_id: postId, usuario_id: currentUserId, comentario: text });
+      if (error) throw error;
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+      setUserPosts(current => current.map(item => item.id === postId ? { ...item, commentsCount: (item.commentsCount || 0) + 1 } : item));
+      fetchPostComments(postId);
+    } catch (err) { console.error('Comment error:', err); Alert.alert('Error', 'No se pudo enviar.'); }
+    finally { setSubmittingComment(null); }
+  };
+
+  const fetchPostComments = async (postId: string) => {
+    const { data } = await supabase.from('post_comments').select('*').eq('publicacion_id', postId).order('created_at', { ascending: true });
+    if (data) {
+      const authorIds = [...new Set(data.map(c => c.usuario_id))];
+      const { data: profiles } = await supabase.from('perfiles').select('id, username, nombre, foto_perfil').in('id', authorIds);
+      const pMap = new Map((profiles || []).map(p => [p.id, p]));
+      setPostComments(prev => ({ ...prev, [postId]: data.map(c => ({ ...c, perfil: pMap.get(c.usuario_id) || { username: 'Usuario' } })) }));
+    }
+  };
+
+  const toggleCommentSection = (postId: string) => {
+    if (activeCommentPost === postId) { setActiveCommentPost(null); }
+    else { setActiveCommentPost(postId); if (!postComments[postId]) fetchPostComments(postId); }
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    const now = new Date(); const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMin = Math.floor(diffMs / 60000); const diffHrs = Math.floor(diffMs / 3600000); const diffDays = Math.floor(diffMs / 86400000);
+    if (diffMin < 1) return 'Justo ahora'; if (diffMin < 60) return `Hace ${diffMin} min`;
+    if (diffHrs < 24) return `Hace ${diffHrs}h`; if (diffDays < 7) return `Hace ${diffDays}d`;
+    return date.toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });
+  };
+
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#2e7d32" />
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }]}> 
+        <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
   }
 
   if (!profile) {
     return (
-      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
-        <Ionicons name="person-outline" size={60} color="#ddd" />
-        <Text style={{ color: '#999', marginTop: 12 }}>Usuario no encontrado</Text>
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }]}> 
+        <Ionicons name="person-outline" size={60} color={theme.muted} />
+        <Text style={{ color: theme.muted, marginTop: 12 }}>Usuario no encontrado</Text>
       </View>
     );
   }
@@ -190,16 +282,16 @@ export default function UserProfileScreen() {
   const isOwnProfile = currentUserId === actualUserId;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}> 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity 
           onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)')} 
           style={styles.backButton}
         >
-          <Ionicons name="arrow-back" size={24} color="#111" />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>{profile.username || profile.nombre}</Text>
+        <Text style={[styles.headerTitle, { color: theme.text }]} numberOfLines={1}>{profile.username || profile.nombre}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -209,73 +301,73 @@ export default function UserProfileScreen() {
           {hasPhoto ? (
             <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
           ) : (
-            <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
-              <Ionicons name="person" size={50} color="#ccc" />
+            <View style={[styles.profileImage, styles.profileImagePlaceholder, { backgroundColor: theme.inputBackground }]}>
+              <Ionicons name="person" size={50} color={theme.muted} />
             </View>
           )}
 
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statNumber}>{stats.records}</Text>
-              <Text style={styles.statLabel}>Registros</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.records}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.records')}</Text>
             </View>
             <TouchableOpacity style={styles.statItem} onPress={() => navigateToFollowers('followers')}>
-              <Text style={styles.statNumber}>{stats.followers}</Text>
-              <Text style={styles.statLabel}>Seguidores</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.followers}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.followers')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.statItem} onPress={() => navigateToFollowers('following')}>
-              <Text style={styles.statNumber}>{stats.following}</Text>
-              <Text style={styles.statLabel}>Seguidos</Text>
+              <Text style={[styles.statNumber, { color: theme.text }]}>{stats.following}</Text>
+              <Text style={[styles.statLabel, { color: theme.subtext }]}>{i18n.t('profile.following')}</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* Info */}
         <View style={styles.infoContainer}>
-          <Text style={styles.fullName}>{profile.username || profile.nombre}</Text>
-          <Text style={styles.description}>{profile.descripcion || 'Sin descripción.'}</Text>
+          <Text style={[styles.fullName, { color: theme.text }]}>{profile.username || profile.nombre}</Text>
+          <Text style={[styles.description, { color: theme.subtext }]}>{profile.descripcion || 'Sin descripción.'}</Text>
         </View>
 
         {/* Botón Follow / Unfollow (solo si no es mi perfil) */}
         {!isOwnProfile && (
           <View style={styles.actionsContainer}>
             <TouchableOpacity
-              style={[styles.actionButton, isFollowing ? styles.unfollowButton : styles.followButton]}
+              style={[styles.actionButton, { backgroundColor: theme.primary }, isFollowing && { backgroundColor: theme.inputBackground, borderWidth: 1, borderColor: theme.border }]}
               onPress={toggleFollow}
               disabled={togglingFollow}
               activeOpacity={0.7}
             >
               {togglingFollow ? (
-                <ActivityIndicator size="small" color={isFollowing ? '#555' : '#fff'} />
+                <ActivityIndicator size="small" color={isFollowing ? theme.subtext : theme.primaryText} />
               ) : (
-                <Text style={[styles.actionButtonText, isFollowing && styles.unfollowButtonText]}>
-                  {isFollowing ? 'Dejar de seguir' : 'Seguir'}
+                <Text style={[styles.actionButtonText, { color: theme.primaryText }, isFollowing && { color: theme.subtext }]}>
+                  {isFollowing ? i18n.t('social.unfollow') : i18n.t('social.follow')}
                 </Text>
               )}
             </TouchableOpacity>
             
             <TouchableOpacity 
-              style={[styles.actionButton, styles.messageButton]}
+              style={[styles.actionButton, { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.border }]}
               onPress={() => router.push({ pathname: '/messages', params: { userId: actualUserId } })}
             >
-              <Text style={styles.messageButtonText}>Mensaje</Text>
+              <Text style={[styles.messageButtonText, { color: theme.text }]}>{i18n.t('messages.title')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {/* Tabs */}
-        <View style={styles.tabsContainer}>
+        <View style={[styles.tabsContainer, { borderTopColor: theme.border }]}>
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'records' && styles.activeTab]} 
+            style={[styles.tab, activeTab === 'records' && [styles.activeTab, { borderBottomColor: theme.primary }]]} 
             onPress={() => setActiveTab('records')}
           >
-            <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? '#111' : '#888'} />
+            <Ionicons name="grid-outline" size={24} color={activeTab === 'records' ? theme.primary : theme.muted} />
           </TouchableOpacity>
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'community' && styles.activeTab]} 
+            style={[styles.tab, activeTab === 'community' && [styles.activeTab, { borderBottomColor: theme.primary }]]} 
             onPress={() => setActiveTab('community')}
           >
-            <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? '#111' : '#888'} />
+            <Ionicons name="megaphone-outline" size={24} color={activeTab === 'community' ? theme.primary : theme.muted} />
           </TouchableOpacity>
         </View>
 
@@ -283,8 +375,8 @@ export default function UserProfileScreen() {
         {activeTab === 'records' && (
           userRecords.length === 0 ? (
             <View style={{ alignItems: 'center', padding: 40 }}>
-              <Ionicons name="leaf-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>Sin registros públicos</Text>
+              <Ionicons name="leaf-outline" size={48} color={theme.muted} />
+              <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('profile.noRecords')}</Text>
             </View>
           ) : (
             <View style={styles.gridContainer}>
@@ -300,20 +392,68 @@ export default function UserProfileScreen() {
         {activeTab === 'community' && (
           userPosts.length === 0 ? (
             <View style={{ alignItems: 'center', padding: 40 }}>
-              <Ionicons name="megaphone-outline" size={48} color="#ccc" />
-              <Text style={styles.emptyText}>Sin publicaciones en la comunidad</Text>
+              <Ionicons name="megaphone-outline" size={48} color={theme.muted} />
+              <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('profile.noPosts')}</Text>
             </View>
           ) : (
             <View style={styles.postsListContainer}>
               {userPosts.map((post) => (
-                <View key={post.id} style={styles.postCard}>
+                <View key={post.id} style={[styles.postCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                   <View style={styles.postCardHeader}>
-                    <Text style={styles.postCardTitle}>{post.titulo}</Text>
+                    <Text style={[styles.postCardTitle, { color: theme.text }]}>{post.titulo}</Text>
                   </View>
-                  <Text style={styles.postCardDesc}>{post.descripcion}</Text>
-                  <Text style={styles.postCardDate}>
+                  <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  <Text style={[styles.postCardDate, { color: theme.muted }]}>
                     {new Date(post.created_at).toLocaleDateString('es-VE')}
                   </Text>
+
+                  <View style={[styles.postActionsRow, { borderTopColor: theme.border }]}>
+                    <TouchableOpacity
+                      style={[styles.postActionBtn, post.likedByMe && styles.postActionBtnActive]}
+                      onPress={() => handleToggleLike(post.id)}
+                    >
+                      <Ionicons name={post.likedByMe ? 'heart' : 'heart-outline'} size={18} color={post.likedByMe ? '#ec4899' : theme.muted} />
+                      <Text style={[styles.postActionText, { color: theme.muted }, post.likedByMe && { color: '#ec4899' }]}>{post.likesCount || 0}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.postActionBtn} onPress={() => toggleCommentSection(post.id)}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={18} color={theme.muted} />
+                      <Text style={[styles.postActionText, { color: theme.muted }]}>{post.commentsCount || 0}</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {activeCommentPost === post.id && (
+                    <View style={[styles.commentSection, { borderTopColor: theme.border }]}>
+                      {(postComments[post.id] || []).map((comment: any) => (
+                        <View key={comment.id} style={styles.commentItem}>
+                          <View style={[styles.commentAvatar, { backgroundColor: theme.inputBackground }]}>
+                            {comment.perfil?.foto_perfil && !comment.perfil.foto_perfil.includes('unsplash') ? (
+                              <Image source={{ uri: comment.perfil.foto_perfil }} style={{ width: 28, height: 28, borderRadius: 14 }} />
+                            ) : (
+                              <Ionicons name="person" size={14} color={theme.muted} />
+                            )}
+                          </View>
+                          <View style={[styles.commentContent, { backgroundColor: theme.inputBackground }]}>
+                            <Text style={[styles.commentAuthor, { color: theme.text }]}>{comment.perfil?.username || 'Usuario'}</Text>
+                            <Text style={[styles.commentText, { color: theme.subtext }]}>{comment.comentario}</Text>
+                            <Text style={[styles.commentTime, { color: theme.muted }]}>{getTimeAgo(comment.created_at)}</Text>
+                          </View>
+                        </View>
+                      ))}
+                      <View style={styles.commentInputRow}>
+                        <TextInput
+                          style={[styles.commentInputField, { borderColor: theme.border, color: theme.text, backgroundColor: theme.card }]}
+                          placeholder={i18n.t('observatory.writeComment')}
+                          placeholderTextColor={theme.placeholder}
+                          value={commentInputs[post.id] || ''}
+                          onChangeText={(v) => setCommentInputs(prev => ({ ...prev, [post.id]: v }))}
+                          multiline
+                        />
+                        <TouchableOpacity style={[styles.commentSendBtn, { backgroundColor: theme.mode === 'dark' ? 'rgba(52,211,153,0.15)' : '#e8f5e9' }]} onPress={() => handleSubmitComment(post.id)} disabled={submittingComment === post.id}>
+                          {submittingComment === post.id ? <ActivityIndicator size="small" color={theme.primary} /> : <Ionicons name="send" size={18} color={theme.primary} />}
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
                 </View>
               ))}
             </View>
@@ -512,4 +652,24 @@ const styles = StyleSheet.create({
     color: '#888', 
     marginTop: 8 
   },
+  postActionsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0',
+  },
+  postActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 10,
+  },
+  postActionBtnActive: { backgroundColor: 'rgba(236, 72, 153, 0.08)' },
+  postActionText: { fontSize: 14, fontWeight: '600', color: '#555' },
+  commentSection: { marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f0f0f0' },
+  commentItem: { flexDirection: 'row', marginBottom: 10, gap: 8 },
+  commentAvatar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#f0f0f0', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  commentContent: { flex: 1, backgroundColor: '#f5f5f5', borderRadius: 12, padding: 8, paddingHorizontal: 12 },
+  commentAuthor: { fontSize: 12, fontWeight: 'bold', color: '#111', marginBottom: 2 },
+  commentText: { fontSize: 13, color: '#333', lineHeight: 18 },
+  commentTime: { fontSize: 10, color: '#999', marginTop: 4 },
+  commentInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  commentInputField: { flex: 1, borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, fontSize: 13, color: '#111', backgroundColor: '#fafafa', maxHeight: 80 },
+  commentSendBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#e8f5e9', justifyContent: 'center', alignItems: 'center' },
 });
