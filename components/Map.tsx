@@ -101,7 +101,16 @@ const offsetOverlappingRecords = (records: any[]) => {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
+export default function Map({
+  onRegionChangeComplete,
+  registrationLayout: _registrationLayout,
+  initialRegion,
+}: {
+  onRegionChangeComplete?: (region: any) => void;
+  /** Solo aplica en `Map.web`; en nativo se ignora */
+  registrationLayout?: boolean;
+  initialRegion?: any;
+}) {
   const [records, setRecords] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [currentRegion, setCurrentRegion] = useState(INITIAL_REGION);
@@ -249,7 +258,7 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
       <MapView
         ref={mapRef}
         style={{ width: SCREEN_W, height: SCREEN_H }}
-        initialRegion={INITIAL_REGION}
+        initialRegion={initialRegion || INITIAL_REGION}
         mapType="hybrid"
         maxZoomLevel={18}
         minZoomLevel={3}
@@ -439,7 +448,7 @@ const s = StyleSheet.create({
   // ── Search bar ──
   searchContainer: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
+    top: Platform.OS === 'ios' ? 86 : 62,
     left: 16,
     right: 16,
     zIndex: 20,

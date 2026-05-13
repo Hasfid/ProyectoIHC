@@ -216,6 +216,7 @@ export default function CreateRecordScreen() {
         {/* Mapa fullscreen */}
         <View style={{ flex: 1 }}>
           <Map
+            registrationLayout={isWeb}
             onRegionChangeComplete={(region: any) => {
               if (region?.latitude && region?.longitude) {
                 setCoords({ lat: region.latitude, lng: region.longitude });
@@ -428,12 +429,27 @@ const s = StyleSheet.create({
     borderRadius: 12, fontSize: 11, fontWeight: 'bold', marginTop: 4,
   },
 
+  /** Miniatura: web (registro) arriba a la derecha alineada con la búsqueda; nativo abajo a la derecha */
   miniPreviewWrap: {
-    position: 'absolute', top: Platform.OS === 'ios' ? 110 : 70, right: 16,
-    width: 64, height: 64, borderRadius: 14,
-    overflow: 'hidden', borderWidth: 2, borderColor: '#fff',
-    elevation: 6,
-    shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 6, shadowOffset: { width: 0, height: 2 },
+    position: 'absolute',
+    right: 16,
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#fff',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    zIndex: 15,
+    ...Platform.select({
+      web: { top: 76 },
+      ios: { bottom: 88 },
+      default: { bottom: 74 },
+    }),
   },
   miniPreview: { width: '100%', height: '100%' },
 
@@ -468,9 +484,11 @@ const s = StyleSheet.create({
   },
   confirmImage: {
     width: '100%',
-    height: 240,
+    height: isWeb ? 400 : 240,
     borderRadius: 20,
     marginBottom: 16,
+    resizeMode: 'contain',
+    backgroundColor: '#000',
   },
   confirmHint: { color: '#555', fontSize: 14, marginBottom: 18, lineHeight: 20 },
   photoWrapper: { position: 'relative', marginBottom: 16 },

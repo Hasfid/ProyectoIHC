@@ -114,7 +114,7 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
 
     .leaflet-bottom.leaflet-right {
       top: auto !important;
-      bottom: 6px !important;
+      bottom: 16px !important;
       right: 16px !important;
       left: auto !important;
       display: flex !important;
@@ -124,11 +124,6 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
 
     .leaflet-bottom.leaflet-right .leaflet-control-zoom {
       margin: 0 !important;
-    }
-
-    /* Flujo subida (web): zoom abajo derecha, al ras del borde inferior */
-    .leaflet-container.ecos-map-registration .leaflet-bottom.leaflet-right {
-      bottom: 30px !important;
     }
 
     /* ── Marcadores: hover y transición ── */
@@ -335,14 +330,7 @@ const offsetOverlappingRecords = (records: any[]) => {
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
-export default function MapWeb({
-  onRegionChangeComplete,
-  registrationLayout = false,
-}: {
-  onRegionChangeComplete?: (region: any) => void;
-  /** En flujo crear registro (web): barra de búsqueda abajo, junto a la zona de confirmación */
-  registrationLayout?: boolean;
-}) {
+export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeComplete?: (region: any) => void }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
   const [cssReady, setCssReady] = useState(false);
@@ -487,7 +475,7 @@ export default function MapWeb({
     );
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl, useMap, useMapEvents, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents, L } = MapComponents;
 
   // ── Sub-componentes internos ───────────────────────────────────────────────
 
@@ -593,7 +581,6 @@ export default function MapWeb({
     <View style={styles.container}>
 
       <MapContainer
-        className={registrationLayout ? 'ecos-map-registration' : undefined}
         center={MAP_CENTER_START}
         zoom={MAP_ZOOM_START}
         maxZoom={18}
@@ -603,10 +590,8 @@ export default function MapWeb({
         touchZoom={true}
         boxZoom={true}
         keyboard={true}
-        zoomControl={false}
+        zoomControl={true}
       >
-
-        <ZoomControl position="bottomright" />
 
         {/* Listener de eventos */}
         <MapEventsComponent />
@@ -818,28 +803,13 @@ export default function MapWeb({
         className="ecos-search-container"
         style={{
           position: 'absolute',
+          top: 16,
+          left: 16,
+          right: 'auto',
           zIndex: 1000,
+          maxWidth: 420,
+          width: 'min(420px, calc(100% - 32px))',
           pointerEvents: 'auto',
-          ...(registrationLayout
-            ? {
-                top: 76,
-                bottom: 'auto',
-                left: 16,
-                right: 'auto',
-                width: 'min(420px, calc(100% - 120px))',
-                maxWidth: 420,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                margin: 0,
-              }
-            : {
-                top: 16,
-                left: 16,
-                right: 'auto',
-                maxWidth: 420,
-                width: 'min(420px, calc(100% - 32px))',
-              }),
           '--search-background': 'rgba(5,10,8,0.85)',
           '--search-border': 'rgba(52,211,153,0.3)',
           '--search-text': '#ffffff',
@@ -871,10 +841,7 @@ export default function MapWeb({
           )}
         </div>
         {searchResults.length > 0 && (
-          <div
-            className="ecos-search-results"
-            style={registrationLayout ? { marginTop: 6 } : undefined}
-          >
+          <div className="ecos-search-results">
             {searchResults.map((result: any, idx: number) => (
               <div
                 key={idx}
