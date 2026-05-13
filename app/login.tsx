@@ -265,6 +265,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 20,
     elevation: 12,
+    ...(Platform.OS === 'web' && {
+      width: '100%',
+      maxWidth: 450,
+      alignSelf: 'center',
+      borderRadius: 28,
+      marginBottom: 40,
+    })
   },
   title: {
     fontSize: 24,

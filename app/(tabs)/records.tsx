@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   headerTitle: {
-    fontSize: 28, fontWeight: '800', color: '#111', letterSpacing: 0.5,
+    fontSize: 24, fontWeight: '800', color: '#111', letterSpacing: 0.5,
   },
   headerSubtitle: { color: '#555', fontSize: 16, fontWeight: '500', marginTop: 4 },
   

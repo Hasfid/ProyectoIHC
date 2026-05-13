@@ -13,7 +13,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 
 // ── Geometría ────────────────────────────────────────────────────────────────
@@ -393,9 +393,9 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
           maxZoom={18}
         />
 
-        {/* ── Máscara: oscurece el resto del mundo ── */}
+        {/* ── Máscara: oscurece la Guayana y deja el resto claro ── */}
         <Polygon
-          positions={[WORLD_BOUNDS, GUAYANA_POLYGON]}
+          positions={GUAYANA_POLYGON}
           pathOptions={{
             fillColor: '#000000',
             fillOpacity: 0.55,

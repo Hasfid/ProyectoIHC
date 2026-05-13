@@ -16,7 +16,7 @@ import { withLayoutContext } from 'expo-router';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { View, Text, StyleSheet, Platform, DeviceEventEmitter } from 'react-native';
+import { View, Text, StyleSheet, Platform, DeviceEventEmitter, useWindowDimensions } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from '../../lib/supabase';
 import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
@@ -31,6 +31,8 @@ import { TouchableOpacity } from 'react-native';
 
 const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessages }: any) => {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isSmallScreen = width < 768;
   const [menuOpen, setMenuOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
@@ -71,11 +73,11 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
   };
 
   return (
-    <View style={webStyles.container}>
+    <View style={[webStyles.container, isSmallScreen && { paddingHorizontal: 8 }]}>
       {/* IZQUIERDA: LOGO */}
       <View style={webStyles.leftContainer}>
         <Ionicons name="leaf" size={28} color="#2e7d32" />
-        <Text style={webStyles.logoText}>Ecos</Text>
+        {!isSmallScreen && <Text style={webStyles.logoText}>Ecos</Text>}
       </View>
 
       {/* CENTRO: PESTAÑAS (Descubrir, Observatorio, Escáner, Registros) */}
@@ -102,31 +104,37 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
             <TouchableOpacity
               key={route.key}
               onPress={onPress}
-              style={[webStyles.tabItem, isFocused && webStyles.tabItemActive]}
+              style={[
+                webStyles.tabItem, 
+                isFocused && webStyles.tabItemActive,
+                isSmallScreen && { paddingHorizontal: 12 }
+              ]}
             >
               {options.tabBarIcon && options.tabBarIcon({ color: isFocused ? '#2e7d32' : '#666', focused: isFocused })}
-              <Text style={[webStyles.tabLabel, isFocused && webStyles.tabLabelActive]}>
-                {options.title || route.name}
-              </Text>
+              {!isSmallScreen && (
+                <Text style={[webStyles.tabLabel, isFocused && webStyles.tabLabelActive]}>
+                  {options.title || route.name}
+                </Text>
+              )}
             </TouchableOpacity>
           );
         })}
       </View>
 
       {/* DERECHA: MENSAJERÍA, NOTIFICACIONES Y PERFIL */}
-      <View style={webStyles.rightContainer}>
-        <TouchableOpacity style={webStyles.iconBtn} onPress={() => router.push('/notifications')}>
-          <Ionicons name="notifications" size={22} color="#333" />
+      <View style={[webStyles.rightContainer, isSmallScreen && { gap: 4, flex: 1.5 }]}>
+        <TouchableOpacity style={[webStyles.iconBtn, isSmallScreen && { width: 32, height: 32 }]} onPress={() => router.push('/notifications')}>
+          <Ionicons name="notifications" size={isSmallScreen ? 18 : 22} color="#333" />
           {unreadCount > 0 && (
-            <View style={webStyles.badge}>
+            <View style={[webStyles.badge, isSmallScreen && { top: -2, right: -2 }]}>
               <Text style={webStyles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
             </View>
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={webStyles.iconBtn} onPress={() => router.push('/chat')}>
-          <Ionicons name="chatbubble" size={22} color="#333" />
+        <TouchableOpacity style={[webStyles.iconBtn, isSmallScreen && { width: 32, height: 32 }]} onPress={() => router.push('/chat')}>
+          <Ionicons name="chatbubble" size={isSmallScreen ? 18 : 22} color="#333" />
           {unreadMessages > 0 && (
-            <View style={webStyles.badge}>
+            <View style={[webStyles.badge, isSmallScreen && { top: -2, right: -2 }]}>
               <Text style={webStyles.badgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
             </View>
           )}
@@ -135,10 +143,10 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
         <View style={{ flexDirection: 'row', alignItems: 'center', position: 'relative' }}>
           <View style={{ position: 'relative' }}>
             <TouchableOpacity 
-              style={[webStyles.iconBtn, state.index === 4 && webStyles.iconBtnActive, { marginRight: 8 }]} 
+              style={[webStyles.iconBtn, state.index === 4 && webStyles.iconBtnActive, { marginRight: 8 }, isSmallScreen && { width: 32, height: 32 }]} 
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
-              <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={22} color={state.index === 4 ? "#2e7d32" : "#333"} />
+              <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={isSmallScreen ? 18 : 22} color={state.index === 4 ? "#2e7d32" : "#333"} />
             </TouchableOpacity>
             <TouchableOpacity 
               onPress={() => setMenuOpen(!menuOpen)} 

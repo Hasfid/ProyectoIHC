@@ -15,9 +15,9 @@ import { fetchWeather, WeatherData } from '../lib/weather';
 
 export default function WeatherWidget() {
   const [data, setData] = useState<WeatherData | null>(null);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(Platform.OS === 'web');
   const [loading, setLoading] = useState(true);
-  const anim = useRef(new Animated.Value(0)).current;
+  const anim = useRef(new Animated.Value(Platform.OS === 'web' ? 1 : 0)).current;
 
   useEffect(() => {
     loadWeather();

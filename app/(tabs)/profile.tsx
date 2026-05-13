@@ -1333,13 +1333,14 @@ function DeleteConfirmationModal({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#ffffff' },
   customHeader: {
-    paddingTop: Platform.OS === 'ios' ? 40 : 20, paddingHorizontal: 20, paddingBottom: 10,
-    backgroundColor: '#ffffff', position: 'absolute', top: 0, left: 0, right: 0,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 20, paddingBottom: 10,
+    backgroundColor: '#ffffff',
     zIndex: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    borderBottomWidth: 1, borderBottomColor: '#eee',
   },
-  customHeaderTitle: { fontSize: 20, fontWeight: 'bold', color: '#111' },
+  customHeaderTitle: { fontSize: 24, fontWeight: 'bold', color: '#111' },
   headerActions: { flexDirection: 'row', alignItems: 'center' },
-  scrollContent: { paddingTop: 100 },
+  scrollContent: { paddingTop: 10 },
   menuButton: { padding: 8 },
   headerContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
   profileImage: { width: 86, height: 86, borderRadius: 43, borderWidth: 1, borderColor: '#eaeaea' },

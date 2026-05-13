@@ -12,10 +12,10 @@
  * @module components/Map
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, View, Text, Image, Dimensions, TouchableOpacity, Platform } from 'react-native';
-import MapView, { Marker, Polygon } from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Dimensions, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import MapView, { Marker, Polygon } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -28,9 +28,9 @@ const GUAYANA_REGION = GUAYANA_POLYGON;
 
 const WORLD_REGION = [
   { latitude: 90, longitude: -180 },
-  { latitude: -90, longitude: -180 },
-  { latitude: -90, longitude: 180 },
   { latitude: 90, longitude: 180 },
+  { latitude: -90, longitude: 180 },
+  { latitude: -90, longitude: -180 },
 ];
 
 /** Región inicial: vista general del país */
@@ -147,10 +147,9 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
         onRegionChangeComplete={onRegionChangeComplete}
         onPress={closeCard}
       >
-        {/* ── Máscara: oscurece el mundo excepto la Guayana ── */}
+        {/* ── Máscara: oscurece la Guayana y deja el resto claro ── */}
         <Polygon
-          coordinates={WORLD_REGION}
-          holes={[GUAYANA_REGION]}
+          coordinates={GUAYANA_REGION}
           fillColor="rgba(0, 0, 0, 0.55)"
           strokeColor="rgba(0, 0, 0, 0)"
         />

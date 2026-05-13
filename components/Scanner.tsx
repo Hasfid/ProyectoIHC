@@ -13,19 +13,24 @@
  * @module components/Scanner
  */
 
-import React, { useRef, useState, useEffect } from 'react';
-import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Platform, Animated,
-} from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import * as Location from 'expo-location';
-import * as ImagePicker from 'expo-image-picker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as FileSystem from 'expo-file-system/legacy';
-import { saveDraft, getPendingCount, DRAFTS_UPDATED_EVENT } from '../lib/drafts';
-import { DeviceEventEmitter } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator, Alert,
+    Animated,
+    DeviceEventEmitter,
+    Platform,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { DRAFTS_UPDATED_EVENT, getPendingCount, saveDraft } from '../lib/drafts';
 
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -91,7 +96,7 @@ export default function Scanner() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         return { lat: pos.coords.latitude, lng: pos.coords.longitude };
       }
-    } catch {}
+    } catch { }
     return { lat: 5.0, lng: -63.5 };
   };
 
@@ -197,8 +202,8 @@ export default function Scanner() {
 
   const statusLabel =
     phase === 'capturing' ? 'Capturando...' :
-    phase === 'saving'    ? 'Guardando localmente...' :
-    'Apunta y captura — se procesa en segundo plano';
+      phase === 'saving' ? 'Guardando localmente...' :
+        'Apunta y captura — se procesa en segundo plano';
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -206,24 +211,14 @@ export default function Scanner() {
       {/* Cámara en vivo */}
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
 
-      {/* HUD de Escaneo */}
+      {/* Marco de captura limpio */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={styles.hudTopLeft}>
-          <Text style={styles.hudTitle}>SISTEMA DE ANÁLISIS · GUAYANA BIODIVERSA</Text>
-        </View>
-
         <View style={styles.reticleContainer}>
           <View style={[styles.corner, styles.TL]} />
           <View style={[styles.corner, styles.TR]} />
           <View style={[styles.corner, styles.BL]} />
           <View style={[styles.corner, styles.BR]} />
-          <View style={styles.idBox}>
-            <Text style={styles.idText}>MODO CAPTURA RÁPIDA</Text>
-          </View>
         </View>
-
-        <View style={styles.gridH} />
-        <View style={styles.gridV} />
       </View>
 
       {/* Badge de pendientes */}
@@ -233,7 +228,7 @@ export default function Scanner() {
           onPress={() => router.push({ pathname: '/(tabs)/profile', params: { tab: 'pending' } })}
           activeOpacity={0.7}
         >
-          <Ionicons name="cloud-upload-outline" size={14} color="#000" />
+          <Ionicons name="cloud-upload-outline" size={14} color="#fff" />
           <Text style={styles.pendingText}>{pendingCount} pendiente(s)</Text>
         </TouchableOpacity>
       )}
@@ -242,7 +237,7 @@ export default function Scanner() {
       {phase === 'saved' && (
         <Animated.View style={[styles.savedOverlay, { opacity: fadeAnim }]}>
           <View style={styles.savedCard}>
-            <Ionicons name="checkmark-circle" size={64} color={NEON_GREEN} />
+            <Ionicons name="checkmark-circle" size={64} color="#2e7d32" />
             <Text style={styles.savedTitle}>¡Guardado!</Text>
             <Text style={styles.savedSubtext}>Se identificará y subirá en segundo plano</Text>
           </View>
@@ -252,7 +247,7 @@ export default function Scanner() {
       {/* Overlay de carga */}
       {(phase === 'capturing' || phase === 'saving') && (
         <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={NEON_GREEN} />
+          <ActivityIndicator size="large" color="#2e7d32" />
           <Text style={styles.loadingText}>{statusLabel}</Text>
         </View>
       )}
@@ -265,8 +260,8 @@ export default function Scanner() {
             onPress={handlePickMedia}
             disabled={isBusy}
           >
-            <Ionicons name="images-outline" size={28} color={NEON_GREEN} />
-            <Text style={styles.sideBtnText}>Cargar</Text>
+            <Ionicons name="images-outline" size={26} color="#fff" />
+            <Text style={styles.sideBtnText}>Cargar registro</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -275,17 +270,14 @@ export default function Scanner() {
             disabled={isBusy}
           >
             {isBusy
-              ? <ActivityIndicator color={NEON_GREEN} size="small" />
-              : <Ionicons name="scan-circle" size={48} color={NEON_GREEN} />
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Ionicons name="scan-circle" size={48} color="#fff" />
             }
           </TouchableOpacity>
 
-          <View style={styles.sideBtnPlaceholder}>
-            <Text style={styles.captureLabel}>OFFLINE</Text>
-            <Text style={styles.captureLabel}>FIRST</Text>
-          </View>
+          <View style={styles.sideBtnPlaceholder} />
         </View>
-        <Text style={styles.statusSubtext}>{statusLabel}</Text>
+        <Text style={styles.bottomCaption}>{"Captura una imagen e identifica la especie de la Guayana Venezolana."}</Text>
       </View>
     </View>
   );
@@ -294,58 +286,51 @@ export default function Scanner() {
 // ── Estilos ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  centered:          { flex: 1, backgroundColor: '#0a0a0a', justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32 },
-  text:              { color: '#ccc', fontSize: 16, textAlign: 'center' },
-  permissionBtn:     { marginTop: 8, paddingHorizontal: 28, paddingVertical: 12, backgroundColor: NEON_GREEN, borderRadius: 10 },
-  permissionBtnText: { color: '#000', fontWeight: 'bold', fontSize: 16 },
-  container:         { flex: 1, backgroundColor: '#000' },
-
-  hudTopLeft: { position: 'absolute', top: Platform.OS === 'ios' ? 56 : 40, left: 20, borderLeftWidth: 2, borderColor: NEON_GREEN, paddingLeft: 8 },
-  hudTitle:   { color: NEON_GREEN, fontSize: 9, fontWeight: 'bold', letterSpacing: 1.2 },
+  centered: { flex: 1, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', gap: 16, padding: 32 },
+  text: { color: '#333', fontSize: 16, textAlign: 'center' },
+  permissionBtn: { marginTop: 8, paddingHorizontal: 28, paddingVertical: 12, backgroundColor: '#2e7d32', borderRadius: 10 },
+  permissionBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  container: { flex: 1, backgroundColor: '#000' },
 
   reticleContainer: { position: 'absolute', top: '28%', left: '12%', width: '76%', height: '40%', justifyContent: 'center', alignItems: 'center' },
-  corner: { position: 'absolute', width: 28, height: 28, borderColor: NEON_GREEN },
-  TL: { top: 0, left: 0, borderTopWidth: 2, borderLeftWidth: 2 },
-  TR: { top: 0, right: 0, borderTopWidth: 2, borderRightWidth: 2 },
-  BL: { bottom: 0, left: 0, borderBottomWidth: 2, borderLeftWidth: 2 },
-  BR: { bottom: 0, right: 0, borderBottomWidth: 2, borderRightWidth: 2 },
-  idBox:  { position: 'absolute', top: -36, backgroundColor: GLASS_BG, borderWidth: 1, borderColor: NEON_GREEN, padding: 6 },
-  idText: { color: '#fff', fontSize: 9, fontWeight: 'bold', letterSpacing: 0.4 },
+  corner: { position: 'absolute', width: 28, height: 28, borderColor: '#fff' },
+  TL: { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 },
+  TR: { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 },
+  BL: { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 },
+  BR: { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 },
 
-  gridH: { position: 'absolute', top: '50%', left: 0, right: 0, height: 1, backgroundColor: 'rgba(164,255,68,0.15)' },
-  gridV: { position: 'absolute', top: 0, bottom: 0, right: '10%', width: 1, backgroundColor: 'rgba(164,255,68,0.15)' },
-
-  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center', gap: 18, zIndex: 10 },
-  loadingText:    { color: NEON_GREEN, fontSize: 15, fontWeight: '700', letterSpacing: 1, textAlign: 'center' },
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', gap: 18, zIndex: 10 },
+  loadingText: { color: '#fff', fontSize: 15, fontWeight: '600', textAlign: 'center' },
 
   savedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.8)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center', alignItems: 'center', zIndex: 20,
   },
   savedCard: {
-    alignItems: 'center', backgroundColor: 'rgba(10,25,16,0.95)',
-    padding: 40, borderRadius: 24, borderWidth: 1,
-    borderColor: 'rgba(164,255,68,0.3)', gap: 8,
+    alignItems: 'center', backgroundColor: '#fff',
+    padding: 40, borderRadius: 24, gap: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 8,
   },
-  savedTitle:   { color: '#fff', fontSize: 28, fontWeight: 'bold' },
-  savedSubtext: { color: '#aaa', fontSize: 14, textAlign: 'center', maxWidth: 220 },
+  savedTitle: { color: '#111', fontSize: 28, fontWeight: 'bold' },
+  savedSubtext: { color: '#666', fontSize: 14, textAlign: 'center', maxWidth: 220 },
 
   pendingBadge: {
     position: 'absolute', top: Platform.OS === 'ios' ? 56 : 40, right: 20,
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: NEON_GREEN, paddingHorizontal: 10, paddingVertical: 5,
+    backgroundColor: '#2e7d32', paddingHorizontal: 10, paddingVertical: 5,
     borderRadius: 20, zIndex: 5,
   },
-  pendingText: { color: '#000', fontSize: 11, fontWeight: 'bold' },
+  pendingText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
 
-  bottomBar:              { position: 'absolute', bottom: 44, left: 0, right: 0, alignItems: 'center', gap: 10, zIndex: 20 },
+  bottomBar: { position: 'absolute', bottom: 44, left: 0, right: 0, alignItems: 'center', gap: 10, zIndex: 20 },
   actionButtonsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 30 },
-  sideBtn:                { alignItems: 'center', justifyContent: 'center', width: 80 },
-  sideBtnText:            { color: NEON_GREEN, fontSize: 10, fontWeight: 'bold', marginTop: 4, letterSpacing: 0.5 },
-  sideBtnPlaceholder:     { width: 80, alignItems: 'center' },
-  captureBtn:             { width: 84, height: 84, borderRadius: 42, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: NEON_GREEN },
-  captureBtnDisabled:     { opacity: 0.4 },
-  captureLabel:           { color: NEON_GREEN, fontSize: 9, fontWeight: '900', letterSpacing: 1 },
-  statusSubtext:          { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
+  sideBtn: { alignItems: 'center', justifyContent: 'center', width: 80 },
+  sideBtnText: { color: '#fff', fontSize: 10, fontWeight: '600', marginTop: 4, textAlign: 'center' },
+  sideBtnPlaceholder: { width: 80, alignItems: 'center' },
+  captureBtn: { width: 84, height: 84, borderRadius: 42, backgroundColor: '#2e7d32', justifyContent: 'center', alignItems: 'center', borderWidth: 3, borderColor: '#fff' },
+  captureBtnDisabled: { opacity: 0.4 },
+  bottomCaption: { color: 'rgba(255,255,255,0.7)', fontSize: 13, textAlign: 'center', marginTop: 4 },
+  statusSubtext: { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
 });
+

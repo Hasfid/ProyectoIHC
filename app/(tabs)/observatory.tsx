@@ -8,23 +8,22 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useState, useCallback } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-  ActivityIndicator,
-  Alert,
-  RefreshControl,
-  Platform,
+    ActivityIndicator,
+    Alert,
+    Image,
+    Platform,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
+import { followUser, getFollowingIds, unfollowUser } from '../../lib/follows';
 import { supabase } from '../../lib/supabase';
-import { followUser, unfollowUser, getFollowingIds } from '../../lib/follows';
 
 
 // ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
@@ -270,36 +269,13 @@ export default function ObservatoryScreen() {
         {/* Transmisión en Vivo */}
         <Text style={styles.sectionTitle}>Transmisión en Vivo</Text>
         <View style={styles.liveCameraFrame}>
-          {Platform.OS === 'web' ? (
-            <video
-              src={LIVE_VIDEO_URL}
-              autoPlay
-              controls
-              muted
-              playsInline
-              crossOrigin="anonymous"
-              style={{ 
-                width: '100%', 
-                height: '100%', 
-                objectFit: 'cover', 
-                objectPosition: 'center' 
-              }}
-            />
-          ) : (
-            <Video
-              source={{ uri: LIVE_VIDEO_URL }}
-              style={styles.liveCameraImage}
-              resizeMode={ResizeMode.COVER}
-              shouldPlay
-              isMuted={true}
-              useNativeControls
-              isLooping
-            />
-          )}
+          <View style={styles.livePlaceholder}>
+            <Text style={styles.livePlaceholderText}>Transmisión desconectada</Text>
+          </View>
 
           <View style={styles.liveBadge}>
             <View style={styles.liveDot} />
-            <Text style={styles.liveText}>EN VIVO</Text>
+            <Text style={styles.liveText}>DESCONECTADO</Text>
           </View>
         </View>
 
@@ -437,7 +413,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   customHeader: {
-    paddingTop: Platform.OS === 'ios' ? 40 : 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingHorizontal: 20,
     paddingBottom: 10,
     backgroundColor: '#f9fafb',
@@ -445,10 +421,6 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(0,0,0,0.05)',
     flexDirection: 'row',
     alignItems: 'center',
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
     zIndex: 10,
   },
   customHeaderTitle: {
@@ -458,7 +430,7 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingTop: 100,
+    paddingTop: 10,
     paddingHorizontal: 20,
   },
   sectionTitle: {
@@ -466,7 +438,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111',
     marginBottom: 16,
-    marginTop: 8,
+    marginTop: 20,
   },
   liveCameraFrame: {
     width: '100%',
@@ -482,6 +454,19 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
     marginBottom: 32,
+  },
+  livePlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#000',
+  },
+  livePlaceholderText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   liveCameraImage: {
     width: '100%',
