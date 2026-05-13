@@ -21,6 +21,9 @@ export const themes = {
     overlay: 'rgba(255,255,255,0.72)',
     inputBackground: '#f3f4f6',
     placeholder: '#9ca3af',
+    error: '#d32f2f',
+    errorSoft: '#fde8e8',
+    primarySoft: '#e8f5e9',
   },
   dark: {
     mode: 'dark' as ThemeMode,
@@ -36,6 +39,9 @@ export const themes = {
     overlay: 'rgba(15, 23, 42, 0.72)',
     inputBackground: '#0b1120',
     placeholder: '#94a3af',
+    error: '#ef5350',
+    errorSoft: 'rgba(239,83,80,0.15)',
+    primarySoft: 'rgba(52,211,153,0.15)',
   },
 };
 

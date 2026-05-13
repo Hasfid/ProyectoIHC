@@ -26,6 +26,7 @@ import { followUser, getFollowingIds, unfollowUser } from '../../lib/follows';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
 import { i18n } from '../../lib/i18n';
+import { notifyPostLike, notifyPostComment } from '../../lib/notifications';
 
 
 // ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
@@ -362,6 +363,8 @@ export default function ObservatoryScreen() {
           usuario_id: currentUserId,
         });
         if (error) throw error;
+        // Notificar al dueño del post (fire-and-forget)
+        notifyPostLike(postId, currentUserId);
       }
 
       setPosts((current) =>
@@ -400,6 +403,8 @@ export default function ObservatoryScreen() {
         comentario: commentText,
       });
       if (error) throw error;
+      // Notificar al dueño del post (fire-and-forget)
+      notifyPostComment(postId, currentUserId);
 
       setCommentInputs((prev) => ({ ...prev, [postId]: '' }));
       // Actualizar conteo local sin recargar toda la lista

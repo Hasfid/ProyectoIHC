@@ -19,6 +19,7 @@ import { uploadMediaToSupabase } from './uploadMedia';
 import { identifySpecies } from './identifySpecies';
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform, DeviceEventEmitter } from 'react-native';
+import { i18n } from './i18n';
 
 /** Evento emitido cuando cambia la lista de borradores (creación, borrado, sync) */
 export const DRAFTS_UPDATED_EVENT = 'ecos_drafts_updated';
@@ -182,8 +183,8 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
     // IA no devolvió candidatos (solo humanos o nada) — rechazar registro
     await updateDraft(draft.id, {
       status: 'rejected',
-      nombre_tradicional: 'Sin especie detectada',
-      last_error: 'Parece que no hay animales ni plantas aquí.',
+      nombre_tradicional: i18n.t('drafts.noSpeciesDetected'),
+      last_error: i18n.t('drafts.noAnimalsOrPlants'),
     });
     
     return true;
@@ -196,8 +197,8 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
       // Failed geographical filter — reject immediately
       await updateDraft(draft.id, {
         status: 'rejected',
-        nombre_tradicional: 'Especie no válida',
-        last_error: 'La especie detectada no habita en Venezuela.',
+        nombre_tradicional: i18n.t('drafts.invalidSpecies'),
+        last_error: i18n.t('drafts.speciesNotInVenezuela'),
         metadatos_especie: { rejected_reason: 'geo_filter', all_candidates: [] },
       });
       return true;
@@ -205,7 +206,7 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
 
     // Rate limit → no marcar como failed, reintentar después
     if (errorMsg.includes('tráfico')) {
-      await updateDraft(draft.id, { last_error: 'Rate limit — reintentando' });
+      await updateDraft(draft.id, { last_error: i18n.t('drafts.rateLimitRetry') });
       return false;
     }
 
@@ -256,8 +257,8 @@ const uploadDraft = async (draft: DraftRecord, userId: string): Promise<boolean>
 
     const { error: notifError } = await supabase.from('notificaciones').insert({
       usuario_id: userId,
-      titulo: '📡 Registro sincronizado',
-      mensaje: `"${draft.nombre_tradicional}" se acaba de subir.`,
+      titulo: i18n.t('drafts.syncTitle'),
+      mensaje: i18n.t('drafts.syncMessage').replace('{{name}}', draft.nombre_tradicional),
       tipo: 'sincronizacion',
       leido: false,
     });
@@ -310,7 +311,7 @@ export const syncDrafts = async (
   // Fase 1: Identificar con IA los que están pendientes
   const pendingAi = drafts.filter(d => d.status === 'pending_ai');
   for (const draft of pendingAi) {
-    onProgress?.(`Identificando "${draft.nombre_tradicional || 'captura'}"...`);
+    onProgress?.(i18n.t('drafts.identifyingProgress').replace('{{name}}', draft.nombre_tradicional || i18n.t('drafts.defaultCaptureName')));
     const ok = await identifyDraft(draft);
     if (ok) identified++;
     else failed++;
@@ -321,7 +322,7 @@ export const syncDrafts = async (
   const freshDrafts = await getDrafts();
   const pendingUpload = freshDrafts.filter(d => d.status === 'pending_upload');
   for (const draft of pendingUpload) {
-    onProgress?.(`Subiendo "${draft.nombre_tradicional}"...`);
+    onProgress?.(i18n.t('drafts.uploadingProgress').replace('{{name}}', draft.nombre_tradicional));
     const ok = await uploadDraft(draft, userId);
     if (ok) uploaded++;
     else failed++;

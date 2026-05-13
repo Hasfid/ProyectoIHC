@@ -19,7 +19,7 @@ import React, { useEffect, useState } from 'react';
 import { DeviceEventEmitter, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
-import { i18n, changeLanguage } from '../../lib/i18n';
+import { i18n, changeLanguage, LANGUAGE_CHANGED_EVENT } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
 
@@ -69,7 +69,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
       {/* CENTRO: PESTAÑAS (Descubrir, Observatorio, Escáner, Registros) */}
       <View style={webStyles.centerContainer}>
         {state.routes.map((route: any, index: number) => {
-          if (route.name === 'profile') return null; // El perfil va a la derecha
+          if (route.name === 'profile' || route.name === 'scanner') return null; // Perfil va a la derecha, scanner está integrado en el mapa
 
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -301,6 +301,15 @@ export default function TabLayout() {
   const { theme } = useTheme();
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [, setLangTick] = useState(0);
+
+  // Re-render tabs when language changes on mobile
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(LANGUAGE_CHANGED_EVENT, () => {
+      setLangTick(t => t + 1);
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     let channel: any;

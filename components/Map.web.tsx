@@ -12,9 +12,11 @@
  * @module components/Map.web
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/theme';
 
 // ── Geometría ────────────────────────────────────────────────────────────────
 
@@ -31,7 +33,14 @@ const WORLD_BOUNDS: [number, number][] = [
   [90, 180],
 ];
 
-const GUAYANA_CENTER: [number, number] = [5.79, -61.55];
+const GUAYANA_CENTER: [number, number] = [6.2, -63.5];
+
+const GUAYANA_VIEWBOX = [
+  Math.min(...GF_POLYGON.map(p => p.longitude)),
+  Math.max(...GF_POLYGON.map(p => p.latitude)),
+  Math.max(...GF_POLYGON.map(p => p.longitude)),
+  Math.min(...GF_POLYGON.map(p => p.latitude)),
+] as [number, number, number, number];
 
 /** Zoom de inicio (vista general del mapa) */
 const MAP_ZOOM_START = 5;
@@ -43,7 +52,7 @@ const MAP_CENTER_START: [number, number] = [5.0, -63.5];
 const FLY_TO_TARGET: [number, number] = [5.8, -61.3];
 
 /** Zoom de destino del flyTo de entrada */
-const FLY_TO_ZOOM = 14;
+const FLY_TO_ZOOM = 16;
 
 /** Duración de la animación flyTo en segundos */
 const FLY_TO_DURATION = 4;
@@ -103,6 +112,20 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
     }
     .leaflet-control-attribution a { color: rgba(52,211,153,0.8) !important; }
 
+    .leaflet-bottom.leaflet-right {
+      top: auto !important;
+      bottom: 16px !important;
+      right: 16px !important;
+      left: auto !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: flex-end !important;
+    }
+
+    .leaflet-bottom.leaflet-right .leaflet-control-zoom {
+      margin: 0 !important;
+    }
+
     /* ── Marcadores: hover y transición ── */
     .eco-pin-wrapper {
       transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -152,6 +175,108 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
     }
     .leaflet-popup {
       transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    /* ── Search bar ── */
+    .ecos-search-container {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      right: 16px;
+      z-index: 1000;
+      max-width: 420px;
+      width: min(420px, calc(100% - 32px));
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+    .ecos-search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px;
+      height: 46px;
+      border-radius: 14px;
+      border: 1px solid var(--search-border, rgba(52,211,153,0.3));
+      background: var(--search-background, rgba(5,10,8,0.85));
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      transition: border-color 0.2s ease;
+    }
+    .ecos-search-bar:focus-within {
+      border-color: rgba(52,211,153,0.6);
+    }
+    .ecos-search-bar input {
+      flex: 1;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--search-text, #fff);
+      font-size: 14px;
+      font-family: ui-sans-serif, system-ui;
+      font-weight: 500;
+    }
+    .ecos-search-bar input::placeholder {
+      color: var(--search-placeholder, rgba(255,255,255,0.4));
+    }
+    .ecos-search-bar .search-icon {
+      color: #34d399;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .ecos-search-bar .clear-btn {
+      background: none;
+      border: none;
+      color: var(--search-placeholder, rgba(255,255,255,0.4));
+      cursor: pointer;
+      font-size: 16px;
+      padding: 4px;
+      display: flex;
+      align-items: center;
+    }
+    .ecos-search-bar .clear-btn:hover {
+      color: #34d399;
+    }
+    .ecos-search-results {
+      margin-top: 6px;
+      border-radius: 14px;
+      border: 1px solid var(--search-result-border, rgba(52,211,153,0.2));
+      background: var(--search-result-background, rgba(5,10,8,0.92));
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+      overflow: hidden;
+    }
+    .ecos-search-result-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      color: var(--search-text, #e2e8f0);
+    }
+    .ecos-search-result-item:last-child {
+      border-bottom: none;
+    }
+    .ecos-search-result-item:hover {
+      background: rgba(52,211,153,0.1);
+    }
+    .ecos-search-result-item .result-icon {
+      color: #34d399;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .ecos-search-result-item .result-text {
+      color: #e2e8f0;
+      font-size: 13px;
+      line-height: 1.4;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
     }
   `;
   document.head.appendChild(style);
@@ -210,6 +335,94 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
   const [records, setRecords] = useState<any[]>([]);
   const [cssReady, setCssReady] = useState(false);
   const [showGuayanaLabel, setShowGuayanaLabel] = useState(true);
+  const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
+
+  // ── Search state ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    if (text.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setSearching(true);
+
+      const [west, north, east, south] = GUAYANA_VIEWBOX;
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('addressdetails', '1');
+      url.searchParams.set('limit', '5');
+      url.searchParams.set('countrycodes', 've');
+      url.searchParams.set('viewbox', `${west},${north},${east},${south}`);
+      url.searchParams.set('q', text.trim());
+
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { 'Accept-Language': 'es' },
+        });
+        const data = await res.json();
+        setSearchResults(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Nominatim search error:', err);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+  };
+
+  const handleSubmitSearch = async () => {
+    if (searchQuery.trim().length < 2) return;
+
+    if (searchResults.length > 0) {
+      handleSelectResult(searchResults[0]);
+      return;
+    }
+
+    // Si no hay resultados, hacer búsqueda rápida
+    setSearching(true);
+    try {
+      const [west, north, east, south] = GUAYANA_VIEWBOX;
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('addressdetails', '1');
+      url.searchParams.set('limit', '1');
+      url.searchParams.set('countrycodes', 've');
+      url.searchParams.set('viewbox', `${west},${north},${east},${south}`);
+      url.searchParams.set('q', searchQuery.trim());
+
+      const res = await fetch(url.toString(), {
+        headers: { 'Accept-Language': 'es' },
+      });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        handleSelectResult(data[0]);
+      }
+    } catch (err) {
+      console.error('Nominatim search error:', err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSelectResult = (result: any) => {
+    const lat = parseFloat(result.latitud ?? result.lat);
+    const lon = parseFloat(result.longitud ?? result.lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+    setFlyTarget({ lat, lng: lon });
+    setSearchQuery(result.nombre_tradicional || result.display_name || '');
+    setSearchResults([]);
+  };
 
   useEffect(() => {
     // Esperar a que el CSS de Leaflet esté cargado para evitar FOUC
@@ -262,25 +475,9 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
     );
   }
 
-  const { MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl, useMap, useMapEvents, L } = MapComponents;
+  const { MapContainer, TileLayer, Marker, Popup, Polygon, useMap, useMapEvents, L } = MapComponents;
 
   // ── Sub-componentes internos ───────────────────────────────────────────────
-
-  /** Animación de entrada: flyTo desde zoom general hasta el punto focal */
-  const IntroFlyTo = () => {
-    const map = useMap();
-    useEffect(() => {
-      // Pequeño delay para que el mapa termine de montarse
-      const timer = setTimeout(() => {
-        map.flyTo(FLY_TO_TARGET, FLY_TO_ZOOM, {
-          animate: true,
-          duration: FLY_TO_DURATION,
-        });
-      }, 800);
-      return () => clearTimeout(timer);
-    }, [map]);
-    return null;
-  };
 
   /** Listener de movimiento para el callback externo */
   const MapEventsComponent = () => {
@@ -389,22 +586,30 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
         maxZoom={18}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
-        zoomControl={false}
+        doubleClickZoom={true}
+        touchZoom={true}
+        boxZoom={true}
+        keyboard={true}
+        zoomControl={true}
       >
-        <ZoomControl position="bottomright" />
-
-        {/* Animación de entrada flyTo */}
-        <IntroFlyTo />
 
         {/* Listener de eventos */}
         <MapEventsComponent />
 
-        {/* ── Capa Satelital Esri World Imagery ── */}
+        {/* ── Capa satelital similar a hybrid de la app ── */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-          attribution="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
+          attribution="Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
           maxNativeZoom={18}
           maxZoom={18}
+        />
+
+        {/* ── Capas de etiquetas para caminos y nombres ── */}
+        <TileLayer
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
+          maxNativeZoom={18}
+          maxZoom={18}
+          pane="overlayPane"
         />
 
         {/* ── Máscara: oscurece el exterior de la Guayana y mantiene el interior claro ── */}
@@ -439,26 +644,27 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
               className: 'guayana-label-icon',
               html: `
                 <div style="
-                  background: rgba(8, 14, 20, 0.92);
-                  color: white;
-                  padding: 10px 16px;
-                  border-radius: 16px;
-                  border: 1px solid rgba(52,211,153,0.35);
-                  box-shadow: 0 18px 32px rgba(0,0,0,0.45);
+                  color: rgba(255,255,255,0.95);
                   font-weight: 700;
                   font-size: 14px;
                   letter-spacing: 0.4px;
                   text-transform: uppercase;
+                  text-align: center;
                   white-space: nowrap;
+                  text-shadow: 0 0 12px rgba(0,0,0,0.35);
+                  transform: rotate(-10deg);
                 ">
-                  Guayana Venezolana
+                  REGIÓN GUAYANA
                 </div>
               `,
-              iconSize: [220, 40],
-              iconAnchor: [110, 0],
+              iconSize: [220, 24],
+              iconAnchor: [110, 12],
             })}
           />
         )}
+
+        {/* ── FlyTo desde busqueda ── */}
+        {flyTarget && <FlyToSearch target={flyTarget} useMap={useMap} onDone={() => setFlyTarget(null)} />}
 
         {/* ── Marcadores de registros (datos de Supabase) ── */}
         {records.map((record: any) => {
@@ -591,8 +797,78 @@ export default function MapWeb({ onRegionChangeComplete }: { onRegionChangeCompl
           );
         })}
       </MapContainer>
+
+      {/* ── Barra de busqueda de ubicacion ── */}
+      <div
+        className="ecos-search-container"
+        style={{
+          position: 'absolute',
+          top: 16,
+          left: 16,
+          right: 'auto',
+          zIndex: 1000,
+          maxWidth: 420,
+          width: 'min(420px, calc(100% - 32px))',
+          pointerEvents: 'auto',
+          '--search-background': 'rgba(5,10,8,0.85)',
+          '--search-border': 'rgba(52,211,153,0.3)',
+          '--search-text': '#ffffff',
+          '--search-placeholder': 'rgba(255,255,255,0.55)',
+          '--search-result-background': 'rgba(5,10,8,0.92)',
+          '--search-result-border': 'rgba(52,211,153,0.2)',
+        } as React.CSSProperties}
+      >
+        <div className="ecos-search-bar">
+          <Ionicons name="search" size={18} color="#34d399" style={{ marginRight: 8 }} />
+          <input
+            type="text"
+            placeholder="Search location..."
+            value={searchQuery}
+            onChange={(e: any) => handleSearch(e.target.value)}
+            onKeyDown={(e: any) => {
+              if (e.key === 'Enter') {
+                handleSubmitSearch();
+              }
+            }}
+          />
+          {searching && (
+            <span style={{ color: '#34d399', fontSize: 12, animation: 'pulse 1s infinite' }}>...</span>
+          )}
+          {searchQuery.length > 0 && !searching && (
+            <button className="clear-btn" onClick={() => { setSearchQuery(''); setSearchResults([]); }}>
+              &#x2715;
+            </button>
+          )}
+        </div>
+        {searchResults.length > 0 && (
+          <div className="ecos-search-results">
+            {searchResults.map((result: any, idx: number) => (
+              <div
+                key={idx}
+                className="ecos-search-result-item"
+                onClick={() => handleSelectResult(result)}
+              >
+                <Ionicons name="location-outline" size={16} color="#34d399" />
+                <span className="result-text">{result.display_name}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </View>
   );
+}
+
+/** Sub-componente para volar a la ubicacion buscada */
+function FlyToSearch({ target, useMap, onDone }: { target: { lat: number; lng: number }; useMap: any; onDone: () => void }) {
+  const map = useMap();
+  useEffect(() => {
+    if (target && map) {
+      map.flyTo([target.lat, target.lng], FLY_TO_ZOOM, { animate: true, duration: 2 });
+      onDone();
+    }
+  }, [target, map]);
+  return null;
 }
 
 // ── Estilos inline reutilizables (popup JSX web) ─────────────────────────────

@@ -14,9 +14,10 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useRef, useState } from 'react';
-import { Dimensions, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import MapView, { Marker, Polygon } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
+import { useTheme } from '../lib/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
@@ -35,6 +36,13 @@ const WORLD_REGION = [
   { latitude: -90, longitude: -180 },
 ];
 
+const GUAYANA_VIEWBOX = [
+  Math.min(...GUAYANA_POLYGON.map(p => p.longitude)),
+  Math.max(...GUAYANA_POLYGON.map(p => p.latitude)),
+  Math.max(...GUAYANA_POLYGON.map(p => p.longitude)),
+  Math.min(...GUAYANA_POLYGON.map(p => p.latitude)),
+] as [number, number, number, number];
+
 /** Región inicial: vista general del país */
 const INITIAL_REGION = {
   latitude: 4.5,
@@ -42,17 +50,6 @@ const INITIAL_REGION = {
   latitudeDelta: 40,
   longitudeDelta: 40,
 };
-
-/** Región destino del flyTo: Estado Bolívar, ~zoom 14 */
-const TARGET_REGION = {
-  latitude: 5.8,
-  longitude: -61.3,
-  latitudeDelta: 0.04,
-  longitudeDelta: 0.04,
-};
-
-/** Duración de la animación de vuelo en ms */
-const FLY_DURATION = 4000;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,6 +106,97 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
   const [selected, setSelected] = useState<any | null>(null);
   const [currentRegion, setCurrentRegion] = useState(INITIAL_REGION);
   const mapRef = useRef<MapView>(null);
+  const { theme } = useTheme();
+  const isDark = theme.mode === 'dark';
+
+  // ── Search state ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+
+    if (text.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    searchTimeout.current = setTimeout(async () => {
+      setSearching(true);
+
+      const [west, north, east, south] = GUAYANA_VIEWBOX;
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('addressdetails', '1');
+      url.searchParams.set('limit', '5');
+      url.searchParams.set('countrycodes', 've');
+      url.searchParams.set('viewbox', `${west},${north},${east},${south}`);
+      url.searchParams.set('q', text.trim());
+
+      try {
+        const res = await fetch(url.toString(), {
+          headers: { 'Accept-Language': 'es' },
+        });
+        const data = await res.json();
+        setSearchResults(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Nominatim search error:', err);
+        setSearchResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+  };
+
+  const handleSubmitSearch = async () => {
+    if (searchQuery.trim().length < 2) return;
+
+    if (searchResults.length > 0) {
+      handleSelectResult(searchResults[0]);
+      return;
+    }
+
+    // Si no hay resultados, hacer búsqueda rápida
+    setSearching(true);
+    try {
+      const [west, north, east, south] = GUAYANA_VIEWBOX;
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.searchParams.set('format', 'json');
+      url.searchParams.set('addressdetails', '1');
+      url.searchParams.set('limit', '1');
+      url.searchParams.set('countrycodes', 've');
+      url.searchParams.set('viewbox', `${west},${north},${east},${south}`);
+      url.searchParams.set('q', searchQuery.trim());
+
+      const res = await fetch(url.toString(), {
+        headers: { 'Accept-Language': 'es' },
+      });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        handleSelectResult(data[0]);
+      }
+    } catch (err) {
+      console.error('Nominatim search error:', err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSelectResult = (result: any) => {
+    const lat = parseFloat(result.lat);
+    const lon = parseFloat(result.lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+    mapRef.current?.animateToRegion(
+      { latitude: lat, longitude: lon, latitudeDelta: 0.05, longitudeDelta: 0.05 },
+      1500
+    );
+    setSearchQuery(result.display_name.split(',')[0]);
+    setSearchResults([]);
+    Keyboard.dismiss();
+  };
 
   useEffect(() => {
     // Cargar registros de Supabase
@@ -122,12 +210,30 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
       }
     })();
 
-    // Animación de vuelo automática al cargar
+    // Zoom suave hacia el centro actual solamente si la vista es muy alta,
+    // sin moverse a un destino fijo.
     const timer = setTimeout(() => {
-      if (mapRef.current) {
-        mapRef.current.animateToRegion(TARGET_REGION, FLY_DURATION);
+      if (mapRef.current && currentRegion.latitudeDelta > 10) {
+        const targetLatitudeDelta = Math.max(
+          6,
+          Math.min(currentRegion.latitudeDelta * 0.55, currentRegion.latitudeDelta - 2)
+        );
+        const targetLongitudeDelta = Math.max(
+          6,
+          targetLatitudeDelta * (currentRegion.longitudeDelta / currentRegion.latitudeDelta)
+        );
+
+        mapRef.current.animateToRegion(
+          {
+            latitude: currentRegion.latitude,
+            longitude: currentRegion.longitude,
+            latitudeDelta: targetLatitudeDelta,
+            longitudeDelta: targetLongitudeDelta,
+          },
+          1500
+        );
       }
-    }, 1000);
+    }, 800);
 
     return () => clearTimeout(timer);
   }, []);
@@ -144,7 +250,7 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
         ref={mapRef}
         style={{ width: SCREEN_W, height: SCREEN_H }}
         initialRegion={INITIAL_REGION}
-        mapType="satellite"
+        mapType="hybrid"
         maxZoomLevel={18}
         minZoomLevel={3}
         onRegionChangeComplete={(region) => {
@@ -165,7 +271,7 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
         {currentRegion.latitudeDelta >= 3.0 && (
           <Marker coordinate={GUAYANA_LABEL_POSITION} tracksViewChanges={false} tappable={false} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={s.guayanaLabel} pointerEvents="none">
-              <Text style={s.guayanaLabelText}>Guayana Venezolana</Text>
+              <Text style={s.guayanaLabelText}>Región Guayana</Text>
             </View>
           </Marker>
         )}
@@ -212,6 +318,44 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
           );
         })}
       </MapView>
+
+      {/* ── Barra de búsqueda de ubicación ── */}
+      <View style={s.searchContainer}>
+        <View style={[s.searchBar, { backgroundColor: isDark ? 'rgba(22,35,51,0.92)' : 'rgba(255,255,255,0.92)', borderColor: isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.1)' }]}>
+          <Ionicons name="search" size={18} color={isDark ? '#34d399' : theme.muted} />
+          <TextInput
+            style={[s.searchInput, { color: theme.text }]}
+            placeholder="Search location..."
+            placeholderTextColor={theme.placeholder}
+            value={searchQuery}
+            onChangeText={handleSearch}
+            onSubmitEditing={handleSubmitSearch}
+            returnKeyType="search"
+          />
+          {searching && <ActivityIndicator size="small" color={theme.primary} />}
+          {searchQuery.length > 0 && !searching && (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+              <Ionicons name="close-circle" size={18} color={theme.muted} />
+            </TouchableOpacity>
+          )}
+        </View>
+        {searchResults.length > 0 && (
+          <View style={[s.searchResultsList, { backgroundColor: isDark ? 'rgba(22,35,51,0.95)' : 'rgba(255,255,255,0.95)', borderColor: isDark ? 'rgba(52,211,153,0.2)' : 'rgba(0,0,0,0.08)' }]}>
+            {searchResults.map((result: any, idx: number) => (
+              <TouchableOpacity
+                key={idx}
+                style={[s.searchResultItem, idx < searchResults.length - 1 && { borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' }]}
+                onPress={() => handleSelectResult(result)}
+              >
+                <Ionicons name="location-outline" size={16} color={theme.primary} style={{ marginRight: 10 }} />
+                <Text style={[s.searchResultText, { color: theme.text }]} numberOfLines={2}>
+                  {result.display_name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
 
       {/* ── Tarjeta flotante glassmorphism HUD ── */}
       {selected && (
@@ -292,6 +436,68 @@ export default function Map({ onRegionChangeComplete }: { onRegionChangeComplete
 const CARD_W = Math.min(SCREEN_W - 40, 320);
 
 const s = StyleSheet.create({
+  // ── Search bar ──
+  searchContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 60 : 40,
+    left: 16,
+    right: 16,
+    zIndex: 20,
+  },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  searchResultsList: {
+    marginTop: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 10,
+      },
+    }),
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  searchResultText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+
   // ── Marcador circular con imagen ──
   pin: {
     alignItems: 'center',
@@ -409,6 +615,7 @@ const s = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
     textAlign: 'center',
+    transform: [{ rotate: '-10deg' }],
   },
   cardTitle: {
     color: '#fff',

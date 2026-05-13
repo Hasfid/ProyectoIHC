@@ -1,8 +1,9 @@
 /**
  * notifications.tsx — Pantalla de notificaciones del usuario.
  *
- * Muestra notificaciones de seguimiento, sincronización offline,
- * competencias y sistema. Soporta pull-to-refresh y marca como leído.
+ * Muestra notificaciones de seguimiento, likes, comentarios,
+ * sincronización offline y sistema. Soporta pull-to-refresh y marca como leído.
+ * Los likes y comentarios agrupados navegan a la publicación correspondiente.
  *
  * @module app/notifications
  */
@@ -29,7 +30,7 @@ type Notificacion = {
   id: string;
   titulo: string;
   mensaje: string;
-  tipo: 'seguidor' | 'sincronizacion' | 'sistema';
+  tipo: 'seguidor' | 'sincronizacion' | 'sistema' | 'like' | 'comentario';
   leido: boolean;
   created_at: string;
 };
@@ -71,6 +72,21 @@ export default function NotificationsScreen() {
                 DeviceEventEmitter.emit('NOTIFICATIONS_READ');
               });
             }
+          }
+        )
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'notificaciones', filter: `usuario_id=eq.${session.user.id}` },
+          (payload) => {
+            const updated = payload.new as Notificacion;
+            // Actualizar la notificación existente en la lista (para likes/comments agrupados)
+            setNotifications(prev => {
+              const exists = prev.some(n => n.id === updated.id);
+              if (exists) {
+                return prev.map(n => n.id === updated.id ? updated : n);
+              }
+              return prev;
+            });
           }
         )
         .subscribe();
@@ -150,10 +166,21 @@ export default function NotificationsScreen() {
     fetchNotifications();
   };
 
+  /**
+   * Extrae el ID del post del mensaje de notificación.
+   * Formato: ||POST:uuid||texto visible
+   */
+  const extractPostId = (mensaje: string): string | null => {
+    const match = mensaje?.match(/\|\|POST:([a-f0-9-]+)\|\|/);
+    return match ? match[1] : null;
+  };
+
   /** Retorna el nombre del ícono Ionicons según el tipo de notificación */
-  const getIcon = (tipo: string) => {
+  const getIcon = (tipo: string): keyof typeof Ionicons.glyphMap => {
     switch (tipo) {
       case 'seguidor': return 'people';
+      case 'like': return 'heart';
+      case 'comentario': return 'chatbubble-ellipses';
       case 'sincronizacion': return 'cloud-done';
       case 'sistema': return 'information-circle';
       default: return 'notifications';
@@ -164,6 +191,8 @@ export default function NotificationsScreen() {
   const getIconColor = (tipo: string) => {
     switch (tipo) {
       case 'seguidor': return '#2196F3';
+      case 'like': return '#ec4899';
+      case 'comentario': return '#f59e0b';
       case 'sincronizacion': return '#4CAF50';
       case 'sistema': return '#2196F3';
       default: return '#757575';
@@ -173,6 +202,16 @@ export default function NotificationsScreen() {
   const handleNotificationPress = async (item: Notificacion) => {
     markAsRead(item.id);
     
+    // Likes y comentarios: navegar al observatorio (donde está el feed)
+    if (item.tipo === 'like' || item.tipo === 'comentario') {
+      const postId = extractPostId(item.mensaje || '');
+      if (postId) {
+        // Navegar al observatorio — el post está en el feed
+        router.push('/(tabs)/observatory');
+      }
+      return;
+    }
+
     if (item.tipo === 'seguidor') {
       let followerId = null;
       const msg = item.mensaje || '';
@@ -209,8 +248,14 @@ export default function NotificationsScreen() {
 
   const renderItem = ({ item }: { item: Notificacion }) => {
     let displayMessage = item.mensaje || '';
+    
+    // Limpiar el payload interno del mensaje para mostrar solo el texto visible
     if (item.tipo === 'seguidor' && displayMessage.includes('||')) {
       displayMessage = displayMessage.split('||')[1];
+    } else if ((item.tipo === 'like' || item.tipo === 'comentario') && displayMessage.includes('||POST:')) {
+      // Extraer solo el texto visible después del payload ||POST:id||
+      const parts = displayMessage.match(/\|\|POST:[a-f0-9-]+\|\|(.*)/);
+      displayMessage = parts ? parts[1] : displayMessage;
     }
 
     return (

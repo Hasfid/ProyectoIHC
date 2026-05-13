@@ -9,6 +9,7 @@
  */
 
 import { supabase } from './supabase';
+import { i18n } from './i18n';
 
 /** Perfil público de un usuario (proyección mínima) */
 interface UserProfile {
@@ -42,11 +43,11 @@ export const followUser = async (followerId: string, followedId: string): Promis
     .single();
 
   if (profile) {
-    const displayName = profile.username || profile.nombre || 'Un usuario';
+    const displayName = profile.username || profile.nombre || i18n.t('follows.aUser');
     await supabase.from('notificaciones').insert({
       usuario_id: followedId,
-      titulo: 'Nuevo seguidor',
-      mensaje: `${followerId}||${displayName} ha empezado a seguirte.`,
+      titulo: i18n.t('follows.newFollower'),
+      mensaje: `${followerId}||${displayName} ${i18n.t('follows.startedFollowing')}`,
       tipo: 'seguidor',
       leido: false,
     });

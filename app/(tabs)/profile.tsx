@@ -13,30 +13,30 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect, useLocalSearchParams } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  Dimensions,
-  ActivityIndicator,
-  Modal,
-  TextInput,
-  Alert,
-  DeviceEventEmitter,
-  Platform,
-} from 'react-native';
-import { supabase } from '../../lib/supabase';
 import * as ImagePicker from 'expo-image-picker';
-import { uploadMediaToSupabase } from '../../lib/uploadMedia';
-import { getDrafts, deleteDraft, syncDrafts, updateDraft, DraftRecord, DRAFTS_UPDATED_EVENT, NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
-import { i18n, changeLanguage } from '../../lib/i18n';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    DeviceEventEmitter,
+    Dimensions,
+    Image,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { deleteDraft, DraftRecord, DRAFTS_UPDATED_EVENT, getDrafts, NOTIFICATION_UPDATED_EVENT, syncDrafts, updateDraft } from '../../lib/drafts';
+import { changeLanguage, i18n } from '../../lib/i18n';
+import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
+import { uploadMediaToSupabase } from '../../lib/uploadMedia';
+import { notifyPostLike, notifyPostComment } from '../../lib/notifications';
 
 const { width } = Dimensions.get('window');
 
@@ -50,7 +50,7 @@ export default function ProfileScreen() {
   const [recordSubTab, setRecordSubTab] = useState<RecordSubTab>('published');
   const [offlineDrafts, setOfflineDrafts] = useState<DraftRecord[]>([]);
   const [selectingDraft, setSelectingDraft] = useState<DraftRecord | null>(null);
-  const [previewDraftImage, setPreviewDraftImage] = useState<string | null>(null);
+  const [previewDraft, setPreviewDraft] = useState<DraftRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Si viene de Scanner con tab=pending, abrir esa sub-pestaña
@@ -603,6 +603,7 @@ export default function ProfileScreen() {
           publicacion_id: postId,
           usuario_id: session.user.id,
         });
+        notifyPostLike(postId, session.user.id);
       }
       setUserPosts(current =>
         current.map(item =>
@@ -628,6 +629,7 @@ export default function ProfileScreen() {
         comentario: text,
       });
       if (error) throw error;
+      notifyPostComment(postId, session.user.id);
 
       setProfileCommentInputs(prev => ({ ...prev, [postId]: '' }));
       // Actualizar conteo local
@@ -916,31 +918,35 @@ export default function ProfileScreen() {
           <>
             <View style={styles.subTabRow}>
               <TouchableOpacity
-                style={[styles.subTab, recordSubTab === 'published' && styles.subTabActive]}
+                style={[
+                  styles.subTab,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  recordSubTab === 'published' && { backgroundColor: theme.card, borderColor: theme.primary },
+                ]}
                 onPress={() => setRecordSubTab('published')}
               >
-                <Ionicons name="cloud-done-outline" size={16} color={recordSubTab === 'published' ? '#004d40' : '#888'} />
-                <Text style={[styles.subTabText, recordSubTab === 'published' && styles.subTabTextActive]}>
+                <Ionicons name="cloud-done-outline" size={16} color={recordSubTab === 'published' ? theme.primary : theme.muted} />
+                <Text style={[styles.subTabText, { color: recordSubTab === 'published' ? theme.text : theme.muted }]}>
                   {i18n.t('profile.published')} ({stats.records})
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[
-                  styles.subTab, 
-                  recordSubTab === 'pending' && styles.subTabActive,
-                  (recordSubTab !== 'pending' && hasDraftsToConfirm) && styles.subTabAttention
+                  styles.subTab,
+                  { backgroundColor: theme.surface, borderColor: theme.border },
+                  recordSubTab === 'pending' && { backgroundColor: theme.card, borderColor: theme.primary },
+                  (recordSubTab !== 'pending' && hasDraftsToConfirm) && { backgroundColor: theme.surface, borderColor: theme.primary },
                 ]}
                 onPress={() => { setRecordSubTab('pending'); loadOfflineDrafts(); }}
               >
                 <Ionicons 
                   name={hasDraftsToConfirm ? "alert-circle" : "time-outline"} 
                   size={16} 
-                  color={recordSubTab === 'pending' ? '#e65100' : (hasDraftsToConfirm ? '#ef6c00' : '#888')} 
+                  color={recordSubTab === 'pending' ? theme.primary : (hasDraftsToConfirm ? theme.primary : theme.muted)} 
                 />
                 <Text style={[
                   styles.subTabText, 
-                  recordSubTab === 'pending' && styles.subTabTextActivePending,
-                  (recordSubTab !== 'pending' && hasDraftsToConfirm) && { color: '#ef6c00' }
+                  { color: recordSubTab === 'pending' ? theme.text : theme.muted },
                 ]}>
                   {i18n.t('profile.pending')} ({offlineDrafts.length})
                 </Text>
@@ -951,18 +957,18 @@ export default function ProfileScreen() {
             {recordSubTab === 'published' && (
               <>
                 <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
-                  <View style={styles.searchBar}>
-                    <Ionicons name="search" size={20} color="#999" />
+                  <View style={[styles.searchBar, { backgroundColor: theme.inputBackground, borderColor: theme.border, borderWidth: 1 }]}> 
+                    <Ionicons name="search" size={20} color={theme.muted} />
                     <TextInput
-                      style={styles.searchInput}
+                      style={[styles.searchInput, { color: theme.text }]}
                       placeholder={i18n.t('profile.searchRecords')}
-                      placeholderTextColor="#999"
+                      placeholderTextColor={theme.placeholder}
                       value={searchQuery}
                       onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
                       <TouchableOpacity onPress={() => setSearchQuery('')}>
-                        <Ionicons name="close-circle" size={20} color="#999" />
+                        <Ionicons name="close-circle" size={20} color={theme.muted} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -973,17 +979,21 @@ export default function ProfileScreen() {
                     <TouchableOpacity 
                       key={f.key} 
                       onPress={() => setFilter(f.key)}
-                      style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
+                      style={[
+                        styles.filterChip,
+                        { backgroundColor: theme.inputBackground, borderColor: theme.border },
+                        filter === f.key && { backgroundColor: theme.primary, borderColor: theme.primary },
+                      ]}
                     >
-                      <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+                      <Text style={[styles.filterText, { color: filter === f.key ? theme.background : theme.text }, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
 
                 {filteredRecords.length === 0 ? (
                   <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 40 }]}>
-                    <Ionicons name="leaf-outline" size={48} color="#ccc" />
-                    <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noRecords')}</Text>
+                    <Ionicons name="leaf-outline" size={48} color={theme.muted} />
+                    <Text style={{ color: theme.subtext, marginTop: 8 }}>{i18n.t('profile.noRecords')}</Text>
                   </View>
                 ) : (
                   <View style={styles.gridContainer}>
@@ -1008,45 +1018,45 @@ export default function ProfileScreen() {
 
                 {offlineDrafts.length === 0 ? (
                   <View style={{ alignItems: 'center', padding: 40 }}>
-                    <Ionicons name="checkmark-circle-outline" size={48} color="#ccc" />
-                    <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noPending')}</Text>
+                    <Ionicons name="checkmark-circle-outline" size={48} color={theme.muted} />
+                    <Text style={{ color: theme.subtext, marginTop: 8 }}>{i18n.t('profile.noPending')}</Text>
                   </View>
                 ) : (
                   offlineDrafts.map((draft) => (
                     <TouchableOpacity 
                       key={draft.id} 
-                      style={styles.draftCard}
-                      onPress={() => setPreviewDraftImage(draft.media_uri)}
+                      style={[styles.draftCard, { backgroundColor: theme.card, borderColor: theme.border }]}
+                      onPress={() => setPreviewDraft(draft)}
                       activeOpacity={0.7}
                     >
-                      <Image source={{ uri: draft.media_uri }} style={styles.draftImage} />
+                      <Image source={{ uri: draft.media_uri }} style={[styles.draftImage, { backgroundColor: theme.inputBackground }]} />
                       <View style={styles.draftInfo}>
-                        <Text style={styles.draftName} numberOfLines={1}>
+                        <Text style={[styles.draftName, { color: theme.text }]} numberOfLines={1}>
                           {draft.nombre_tradicional}
                         </Text>
                         <View style={[
                           styles.draftStatusBadge,
-                          draft.status === 'pending_ai' ? styles.draftStatusAI : 
-                          draft.status === 'pending_selection' ? { backgroundColor: '#fff3e0' } :
-                          draft.status === 'rejected' ? { backgroundColor: '#ffebee' } : styles.draftStatusUpload
+                          draft.status === 'pending_ai' ? { backgroundColor: theme.card, borderColor: theme.primary } : 
+                          draft.status === 'pending_selection' ? { backgroundColor: theme.card, borderColor: theme.primary } :
+                          draft.status === 'rejected' ? { backgroundColor: theme.card, borderColor: theme.error } : styles.draftStatusUpload
                         ]}>
                           <Ionicons
                             name={draft.status === 'pending_ai' ? 'sparkles-outline' : draft.status === 'pending_selection' ? 'help-circle-outline' : draft.status === 'rejected' ? 'close-circle-outline' : 'cloud-upload-outline'}
                             size={12}
-                            color={draft.status === 'pending_ai' ? '#e65100' : draft.status === 'pending_selection' ? '#ef6c00' : draft.status === 'rejected' ? '#d32f2f' : '#1565c0'}
+                            color={draft.status === 'pending_ai' ? theme.primary : draft.status === 'pending_selection' ? theme.primary : draft.status === 'rejected' ? theme.error : theme.primary}
                           />
                           <Text style={[
                             styles.draftStatusText,
-                            { color: draft.status === 'pending_ai' ? '#e65100' : draft.status === 'pending_selection' ? '#ef6c00' : draft.status === 'rejected' ? '#d32f2f' : '#1565c0' }
+                            { color: draft.status === 'pending_ai' ? theme.primary : draft.status === 'pending_selection' ? theme.primary : draft.status === 'rejected' ? theme.error : theme.primary }
                           ]}>
-                            {draft.status === 'pending_ai' ? 'Esperando IA' : draft.status === 'pending_selection' ? 'Falta confirmar' : draft.status === 'rejected' ? 'Rechazado' : 'Esperando subida'}
+                            {draft.status === 'pending_ai' ? i18n.t('common.connectingAI') : draft.status === 'pending_selection' ? i18n.t('common.pendingConfirm') : draft.status === 'rejected' ? i18n.t('common.rejected') : i18n.t('common.pendingUpload')}
                           </Text>
                         </View>
-                        <Text style={styles.draftDate}>
+                        <Text style={[styles.draftDate, { color: theme.subtext }] }>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
                         {draft.status === 'rejected' && draft.last_error ? (
-                          <Text style={{ fontSize: 11, color: '#d32f2f', marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
+                          <Text style={{ fontSize: 11, color: theme.error, marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
                             {draft.last_error}
                           </Text>
                         ) : null}
@@ -1054,10 +1064,10 @@ export default function ProfileScreen() {
                       <View style={styles.draftActions}>
                         {draft.status === 'pending_selection' ? (
                           <TouchableOpacity
-                            style={[styles.draftRetryBtn, { backgroundColor: '#ef6c00', width: 'auto', paddingHorizontal: 12 }]}
+                            style={[styles.draftRetryBtn, { backgroundColor: theme.primary, width: 'auto', paddingHorizontal: 12 }]}
                             onPress={() => setSelectingDraft(draft)}
                           >
-                            <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>CONFIRMAR</Text>
+                            <Text style={{ color: theme.primaryText, fontSize: 12, fontWeight: 'bold' }}>{i18n.t('common.confirm')}</Text>
                           </TouchableOpacity>
                         ) : draft.status !== 'rejected' && (
                           <TouchableOpacity
@@ -1066,8 +1076,8 @@ export default function ProfileScreen() {
                             disabled={retryingId === draft.id}
                           >
                             {retryingId === draft.id
-                              ? <ActivityIndicator size={16} color="#2e7d32" />
-                              : <Ionicons name="refresh-outline" size={20} color="#2e7d32" />
+                              ? <ActivityIndicator size={16} color={theme.primary} />
+                              : <Ionicons name="refresh-outline" size={20} color={theme.primary} />
                             }
                           </TouchableOpacity>
                         )}
@@ -1075,7 +1085,7 @@ export default function ProfileScreen() {
                           style={styles.draftDeleteBtn}
                           onPress={() => handleDeleteDraft(draft.id)}
                         >
-                          <Ionicons name="trash-outline" size={20} color="#d32f2f" />
+                          <Ionicons name="trash-outline" size={20} color={theme.error} />
                         </TouchableOpacity>
                       </View>
                     </TouchableOpacity>
@@ -1089,8 +1099,8 @@ export default function ProfileScreen() {
         {activeTab === 'community' && (
           userPosts.length === 0 ? (
             <View style={[styles.gridContainer, { justifyContent: 'center', alignItems: 'center', padding: 20 }]}>
-              <Ionicons name="megaphone-outline" size={48} color="#ccc" />
-              <Text style={{ color: '#999', marginTop: 8 }}>{i18n.t('profile.noPosts')}</Text>
+              <Ionicons name="megaphone-outline" size={48} color={theme.muted} />
+              <Text style={{ color: theme.subtext, marginTop: 8 }}>{i18n.t('profile.noPosts')}</Text>
             </View>
           ) : (
             <View style={styles.postsListContainer}>
@@ -1099,7 +1109,7 @@ export default function ProfileScreen() {
                   <View style={styles.postCardHeader}>
                     <Text style={[styles.postCardTitle, { color: theme.text }]}>{post.titulo}</Text>
                     <TouchableOpacity onPress={() => handleDeletePost(post.id)}>
-                      <Ionicons name="trash-outline" size={20} color="#d32f2f" />
+                      <Ionicons name="trash-outline" size={20} color={theme.error} />
                     </TouchableOpacity>
                   </View>
                   <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
@@ -1157,7 +1167,7 @@ export default function ProfileScreen() {
                           multiline
                         />
                         <TouchableOpacity
-                          style={[styles.commentSendBtn, { backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9' }]}
+                          style={[styles.commentSendBtn, { backgroundColor: theme.primarySoft }]}
                           onPress={() => handleSubmitCommentProfile(post.id)}
                           disabled={profileSubmittingComment === post.id}
                         >
@@ -1292,24 +1302,20 @@ export default function ProfileScreen() {
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: theme.text }]}>Editar Perfil</Text>
             <TouchableOpacity onPress={saveProfile} disabled={saving}>
-              {saving ? <ActivityIndicator size="small" color="#2e7d32" /> : <Text style={styles.modalSaveText}>Guardar</Text>}
+              {saving ? <ActivityIndicator size="small" color={theme.primary} /> : <Text style={styles.modalSaveText}>Guardar</Text>}
             </TouchableOpacity>
           </View>
-
-          <ScrollView style={styles.modalBody}>
-            {/* Editar foto */}
-            <View style={styles.editPhotoContainer}>
-              {editPhoto && !editPhoto.includes('images.unsplash.com') ? (
-                <Image source={{ uri: editPhoto }} style={styles.editProfileImage} />
-              ) : (
-                <View style={[styles.editProfileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
-                  <Ionicons name="person" size={50} color="#ccc" />
-                </View>
-              )}
-              <TouchableOpacity onPress={pickImage} style={styles.changePhotoButton}>
-                <Text style={styles.changePhotoText}>Cambiar foto</Text>
-              </TouchableOpacity>
-            </View>
+          <ScrollView contentContainerStyle={{ padding: 20 }}>
+            {editPhoto && !editPhoto.includes('images.unsplash.com') ? (
+              <Image source={{ uri: editPhoto }} style={styles.editProfileImage} />
+            ) : (
+              <View style={[styles.editProfileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}> 
+                <Ionicons name="person" size={50} color="#ccc" />
+              </View>
+            )}
+            <TouchableOpacity onPress={pickImage} style={styles.changePhotoButton}>
+              <Text style={styles.changePhotoText}>Cambiar foto</Text>
+            </TouchableOpacity>
 
             {/* Editar Username */}
             <Text style={[styles.label, { color: theme.subtext }]}>Nombre de usuario</Text>
@@ -1379,8 +1385,8 @@ export default function ProfileScreen() {
                 handleLogout();
               }}
             >
-              <Ionicons name="log-out-outline" size={24} color="#d32f2f" style={{ marginRight: 15 }} />
-              <Text style={{ fontSize: 16, color: '#d32f2f' }}>{i18n.t('profile.logout')}</Text>
+              <Ionicons name="log-out-outline" size={24} color={theme.error} style={{ marginRight: 15 }} />
+              <Text style={{ fontSize: 16, color: theme.error }}>{i18n.t('profile.logout')}</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -1447,24 +1453,46 @@ export default function ProfileScreen() {
 
         {/* Modal de Vista Previa del Borrador */}
         <Modal
-          visible={!!previewDraftImage}
+          visible={!!previewDraft}
           transparent={true}
           animationType="fade"
-          onRequestClose={() => setPreviewDraftImage(null)}
+          onRequestClose={() => setPreviewDraft(null)}
         >
           <TouchableOpacity 
             style={styles.draftPreviewOverlay} 
             activeOpacity={1} 
-            onPress={() => setPreviewDraftImage(null)}
+            onPress={() => setPreviewDraft(null)}
           >
             <View style={styles.draftPreviewCard}>
               <Image 
-                source={{ uri: previewDraftImage || '' }} 
+                source={{ uri: previewDraft?.media_uri || '' }} 
                 style={styles.draftPreviewImage} 
               />
-              <View style={styles.draftPreviewHintContainer}>
-                <Ionicons name="eye-outline" size={16} color="rgba(255,255,255,0.7)" />
-                <Text style={styles.draftPreviewHint}>Tocar para cerrar</Text>
+              {/* Info overlay */}
+              <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.65)', padding: 16, borderBottomLeftRadius: 16, borderBottomRightRadius: 16 }}>
+                <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }} numberOfLines={1}>
+                  {previewDraft?.nombre_tradicional}
+                </Text>
+                <Text style={{ color: previewDraft?.status === 'rejected' ? '#ef9a9a' : '#a5d6a7', fontSize: 12, marginTop: 4, fontWeight: '600' }}>
+                  {previewDraft?.status === 'rejected' ? i18n.t('common.rejected') : previewDraft?.status === 'pending_ai' ? i18n.t('common.connectingAI') : previewDraft?.status === 'pending_selection' ? i18n.t('common.pendingConfirm') : i18n.t('common.pendingUpload')}
+                </Text>
+                {previewDraft?.status === 'rejected' && previewDraft?.last_error ? (
+                  <Text style={{ color: '#ef9a9a', fontSize: 11, marginTop: 4 }} numberOfLines={2}>{previewDraft.last_error}</Text>
+                ) : null}
+                {previewDraft?.status === 'rejected' ? (
+                  <TouchableOpacity
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.error, paddingVertical: 12, borderRadius: 10, marginTop: 12 }}
+                    onPress={() => { handleDeleteDraft(previewDraft.id); setPreviewDraft(null); }}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={theme.background} />
+                    <Text style={{ color: theme.background, fontWeight: 'bold', fontSize: 14 }}>{i18n.t('common.delete')}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.draftPreviewHintContainer}>
+                    <Ionicons name="eye-outline" size={16} color="rgba(255,255,255,0.7)" />
+                    <Text style={styles.draftPreviewHint}>{i18n.t('common.close')}</Text>
+                  </View>
+                )}
               </View>
             </View>
           </TouchableOpacity>
@@ -1492,30 +1520,31 @@ function DeleteConfirmationModal({
   onClose: () => void, 
   onConfirm: () => void 
 }) {
+  const { theme } = useTheme();
   if (!visible) return null;
   return (
     <Modal visible transparent animationType="fade">
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-        <View style={{ backgroundColor: '#fff', padding: 24, borderRadius: 16, width: '100%', maxWidth: 320, alignItems: 'center' }}>
-          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: '#ffebee', justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
-            <Ionicons name="trash-outline" size={32} color="#d32f2f" />
+        <View style={{ backgroundColor: theme.card, padding: 24, borderRadius: 16, width: '100%', maxWidth: 320, alignItems: 'center' }}>
+          <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: theme.errorSoft, justifyContent: 'center', alignItems: 'center', marginBottom: 16 }}>
+            <Ionicons name="trash-outline" size={32} color={theme.error} />
           </View>
-          <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 8, color: '#111' }}>Eliminar pendiente</Text>
-          <Text style={{ fontSize: 15, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
-            ¿Estás seguro que deseas eliminar este registro pendiente? No se subirá a la nube.
+          <Text style={{ fontSize: 20, fontWeight: 'bold', marginBottom: 8, color: theme.text }}>{i18n.t('drafts.deleteTitle')}</Text>
+          <Text style={{ fontSize: 15, color: theme.subtext, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+            {i18n.t('drafts.deleteMessage')}
           </Text>
           <View style={{ flexDirection: 'row', width: '100%', gap: 12 }}>
             <TouchableOpacity 
-              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#f5f5f5', alignItems: 'center' }}
+              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: theme.inputBackground, alignItems: 'center' }}
               onPress={onClose}
             >
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#666' }}>Cancelar</Text>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>{i18n.t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity 
-              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: '#d32f2f', alignItems: 'center' }}
+              style={{ flex: 1, paddingVertical: 14, borderRadius: 12, backgroundColor: theme.error, alignItems: 'center' }}
               onPress={onConfirm}
             >
-              <Text style={{ fontSize: 16, fontWeight: 'bold', color: '#fff' }}>Eliminar</Text>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.background }}>{i18n.t('drafts.deleteConfirm')}</Text>
             </TouchableOpacity>
           </View>
         </View>

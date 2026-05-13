@@ -26,6 +26,7 @@ import { checkIsFollowing, followUser, unfollowUser } from '../lib/follows';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 import { i18n } from '../lib/i18n';
+import { notifyPostLike, notifyPostComment } from '../lib/notifications';
 
 const { width } = Dimensions.get('window');
 
@@ -214,6 +215,7 @@ export default function UserProfileScreen() {
         await supabase.from('post_likes').delete().eq('publicacion_id', postId).eq('usuario_id', currentUserId);
       } else {
         await supabase.from('post_likes').insert({ publicacion_id: postId, usuario_id: currentUserId });
+        notifyPostLike(postId, currentUserId);
       }
       setUserPosts(current => current.map(item => item.id === postId
         ? { ...item, likedByMe: !item.likedByMe, likesCount: item.likesCount + (item.likedByMe ? -1 : 1) }
@@ -229,6 +231,7 @@ export default function UserProfileScreen() {
     try {
       const { error } = await supabase.from('post_comments').insert({ publicacion_id: postId, usuario_id: currentUserId, comentario: text });
       if (error) throw error;
+      notifyPostComment(postId, currentUserId);
       setCommentInputs(prev => ({ ...prev, [postId]: '' }));
       setUserPosts(current => current.map(item => item.id === postId ? { ...item, commentsCount: (item.commentsCount || 0) + 1 } : item));
       fetchPostComments(postId);

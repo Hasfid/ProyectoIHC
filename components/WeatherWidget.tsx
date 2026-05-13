@@ -12,12 +12,24 @@ import React, { useState, useEffect, useRef } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, Animated, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import { fetchWeather, WeatherData } from '../lib/weather';
+import { useTheme } from '../lib/theme';
 
 export default function WeatherWidget() {
+  const { theme } = useTheme();
   const [data, setData] = useState<WeatherData | null>(null);
   const [expanded, setExpanded] = useState(Platform.OS === 'web');
   const [loading, setLoading] = useState(true);
   const anim = useRef(new Animated.Value(Platform.OS === 'web' ? 1 : 0)).current;
+
+  const isDark = theme.mode === 'dark';
+
+  // Colores dinámicos según el modo
+  const chipBg = isDark ? 'rgba(10, 15, 12, 0.92)' : 'rgba(255, 255, 255, 0.95)';
+  const chipBorder = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
+  const textPrimary = isDark ? '#fff' : '#111';
+  const textSecondary = isDark ? '#aaa' : '#666';
+  const textMuted = isDark ? '#777' : '#999';
+  const dividerColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
   useEffect(() => {
     loadWeather();
@@ -61,7 +73,9 @@ export default function WeatherWidget() {
   if (loading) {
     return (
       <View style={s.container}>
-        <View style={s.chip}><Text style={s.miniText}>🌡️ ...</Text></View>
+        <View style={[s.chip, { backgroundColor: chipBg, borderColor: chipBorder }]}>
+          <Text style={[s.miniText, { color: textMuted }]}>🌡️ ...</Text>
+        </View>
       </View>
     );
   }
@@ -73,15 +87,15 @@ export default function WeatherWidget() {
   return (
     <View style={s.container}>
       <TouchableOpacity
-        style={s.chip}
+        style={[s.chip, { backgroundColor: chipBg, borderColor: chipBorder }]}
         onPress={() => setExpanded(!expanded)}
         activeOpacity={0.85}
       >
         {/* Fila compacta */}
         <View style={s.row}>
           <Text style={s.icon}>{current.icon}</Text>
-          <Text style={s.temp}>{current.temperature}°</Text>
-          <Text style={s.label} numberOfLines={1}>{current.label}</Text>
+          <Text style={[s.temp, { color: textPrimary }]}>{current.temperature}°</Text>
+          <Text style={[s.label, { color: textSecondary }]} numberOfLines={1}>{current.label}</Text>
         </View>
 
         {/* Expandido: detalle + pronóstico */}
@@ -92,8 +106,8 @@ export default function WeatherWidget() {
         }}>
           {/* Meta */}
           <View style={s.metaRow}>
-            <Text style={s.meta}>💧 {current.humidity}%</Text>
-            <Text style={s.meta}>💨 {current.windSpeed} km/h</Text>
+            <Text style={[s.meta, { color: textMuted }]}>💧 {current.humidity}%</Text>
+            <Text style={[s.meta, { color: textMuted }]}>💨 {current.windSpeed} km/h</Text>
           </View>
 
           {/* Alerta */}
@@ -104,13 +118,13 @@ export default function WeatherWidget() {
           )}
 
           {/* Pronóstico horario */}
-          <View style={s.divider} />
+          <View style={[s.divider, { backgroundColor: dividerColor }]} />
           <View style={s.forecastRow}>
             {hourly.map((h, i) => (
               <View key={i} style={s.forecastItem}>
-                <Text style={s.fTime}>{h.time}</Text>
+                <Text style={[s.fTime, { color: textMuted }]}>{h.time}</Text>
                 <Text style={s.fIcon}>{h.icon}</Text>
-                <Text style={s.fTemp}>{h.temperature}°</Text>
+                <Text style={[s.fTemp, { color: textPrimary }]}>{h.temperature}°</Text>
               </View>
             ))}
           </View>
@@ -128,10 +142,8 @@ const s = StyleSheet.create({
     zIndex: 20,
   },
   chip: {
-    backgroundColor: 'rgba(10, 15, 12, 0.9)',
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
     paddingHorizontal: 12,
     paddingVertical: 8,
     maxWidth: 200,
@@ -144,11 +156,11 @@ const s = StyleSheet.create({
 
   row: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   icon: { fontSize: 20 },
-  temp: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
-  label: { color: '#aaa', fontSize: 11, flex: 1 },
+  temp: { fontSize: 20, fontWeight: 'bold' },
+  label: { fontSize: 11, flex: 1 },
 
   metaRow: { flexDirection: 'row', gap: 12, marginTop: 6 },
-  meta: { color: '#777', fontSize: 10 },
+  meta: { fontSize: 10 },
 
   alertRow: {
     marginTop: 6,
@@ -161,15 +173,14 @@ const s = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor: 'rgba(255,255,255,0.06)',
     marginVertical: 8,
   },
 
   forecastRow: { flexDirection: 'row', justifyContent: 'space-between' },
   forecastItem: { alignItems: 'center', gap: 2 },
-  fTime: { color: '#666', fontSize: 9 },
+  fTime: { fontSize: 9 },
   fIcon: { fontSize: 16 },
-  fTemp: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  fTemp: { fontSize: 11, fontWeight: 'bold' },
 
-  miniText: { color: '#666', fontSize: 12 },
+  miniText: { fontSize: 12 },
 });

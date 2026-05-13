@@ -1,7 +1,10 @@
 import * as Localization from 'expo-localization';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { DeviceEventEmitter } from 'react-native';
 import { en } from '../locales/en';
 import { es } from '../locales/es';
+
+export const LANGUAGE_CHANGED_EVENT = 'ecos_language_changed';
 
 const translations: Record<string, any> = {
   en,
@@ -55,6 +58,7 @@ export const changeLanguage = async (lang: 'es' | 'en') => {
   try {
     i18n.locale = lang;
     await AsyncStorage.setItem('app_language', lang);
+    DeviceEventEmitter.emit(LANGUAGE_CHANGED_EVENT, lang);
   } catch (error) {
     console.error('Error saving language', error);
   }

@@ -2,11 +2,13 @@
  * @module DiscoverScreen
  * Pantalla principal de "Descubrir".
  * Muestra el mapa interactivo de avistamientos y un acceso rápido al chat.
+ * En web, integra el escáner como panel inferior del mapa.
  */
 
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -14,10 +16,12 @@ import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
+import { i18n } from '../../lib/i18n';
 
 export default function DiscoverScreen() {
   const router = useRouter();
   const [unreadMessages, setUnreadMessages] = useState(0);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const fetchUnreadMessages = async () => {
     try {
@@ -64,12 +68,72 @@ export default function DiscoverScreen() {
 
   const { theme } = useTheme();
 
+  /** Abre el selector de imagen y navega a crear registro (web scanner) */
+  const handleWebScan = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: false,
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+
+    setScannerOpen(false);
+    router.push({
+      pathname: '/create-record',
+      params: {
+        mediaUrl: asset.uri,
+        tipoMedia: (asset.mimeType ?? 'image/jpeg').startsWith('video') ? 'video' : 'imagen',
+      },
+    });
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}> 
 
       <Map />
 
       <WeatherWidget />
+
+      {/* Web: Botón de carga de registro integrado en el mapa */}
+      {Platform.OS === 'web' && (
+        <View style={styles.scannerButtonContainer}>
+          {!scannerOpen ? (
+            <TouchableOpacity
+              style={[styles.scannerButton, { backgroundColor: theme.primary }]}
+              onPress={() => setScannerOpen(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="cloud-upload-outline" size={20} color={theme.primaryText} />
+              <Text style={[styles.scannerButtonText, { color: theme.primaryText }]}>
+                {i18n.t('scanner.uploadRecord')}
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={[styles.scannerPanel, { backgroundColor: theme.card, borderColor: theme.border }]}>
+              <Text style={[styles.scannerPanelCaption, { color: theme.subtext }]}>
+                {i18n.t('scanner.scanCaption')}
+              </Text>
+              <TouchableOpacity
+                style={[styles.scannerUploadBtn, { backgroundColor: theme.primary }]}
+                onPress={handleWebScan}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="cloud-upload" size={20} color={theme.primaryText} />
+                <Text style={[styles.scannerUploadText, { color: theme.primaryText }]}>
+                  {i18n.t('scanner.chooseGallery')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setScannerOpen(false)}>
+                <Text style={[styles.scannerCancelText, { color: theme.muted }]}>
+                  {i18n.t('common.cancel')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
 
       {Platform.OS !== 'web' && (
         <View style={styles.floatingButtonContainer}>
@@ -149,5 +213,65 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  // Scanner web styles
+  scannerButtonContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  scannerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  scannerButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  scannerPanel: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 8,
+    maxWidth: 340,
+  },
+  scannerPanelCaption: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  scannerUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+  },
+  scannerUploadText: {
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  scannerCancelText: {
+    fontSize: 13,
+    marginTop: 2,
   },
 });

@@ -1,14 +1,11 @@
 /**
  * Scanner.tsx — Escáner de biodiversidad offline-first para mobile.
  *
- * Flujo de captura rápida:
+ * Flujo de captura:
  * 1. Captura foto con la cámara o selecciona desde galería
- * 2. Copia el archivo a almacenamiento persistente
- * 3. Guarda un borrador local con status `pending_ai`
- * 4. Muestra feedback visual y retorna al modo escaneo
- *
- * La identificación con IA y la subida a Supabase ocurren en segundo
- * plano via {@link useOfflineSync}. El usuario nunca espera por red.
+ * 2. Muestra preview con opciones: "Tomar otra" o "Subir"
+ * 3. Si sube: copia al almacenamiento, guarda borrador, muestra confirmación
+ * 4. La identificación con IA y subida ocurren en segundo plano
  *
  * @module components/Scanner
  */
@@ -24,6 +21,7 @@ import {
     ActivityIndicator, Alert,
     Animated,
     DeviceEventEmitter,
+    Image,
     Platform,
     StyleSheet,
     Text,
@@ -37,20 +35,15 @@ import { i18n } from '../lib/i18n';
 // ── Tipos ────────────────────────────────────────────────────────────────────
 
 /** Fases de la UI del scanner */
-type Phase = 'scanning' | 'capturing' | 'saving' | 'saved';
-
-// ── Constantes de diseño ─────────────────────────────────────────────────────
-
-const NEON_GREEN = '#a4ff44';
-const GLASS_BG = 'rgba(0,0,0,0.48)';
+type Phase = 'scanning' | 'capturing' | 'preview' | 'saving' | 'saved';
 
 // ── Componente ───────────────────────────────────────────────────────────────
 
 /**
  * Scanner mobile con captura rápida y almacenamiento offline-first.
  *
- * Renderiza la cámara en vivo con un HUD estilo sci-fi. Las capturas
- * se guardan localmente como borradores para procesamiento asíncrono.
+ * Renderiza la cámara en vivo con un HUD. Las capturas se muestran
+ * como preview antes de guardar como borradores locales.
  */
 export default function Scanner() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -59,6 +52,7 @@ export default function Scanner() {
   const { theme } = useTheme();
   const [phase, setPhase] = useState<Phase>('scanning');
   const [pendingCount, setPendingCount] = useState(0);
+  const [previewUri, setPreviewUri] = useState<string | null>(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   /** Actualiza el contador de borradores pendientes */
@@ -78,20 +72,17 @@ export default function Scanner() {
     setPhase('saved');
     Animated.sequence([
       Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
-      Animated.delay(1200),
+      Animated.delay(1500),
       Animated.timing(fadeAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start(() => {
       setPhase('scanning');
+      setPreviewUri(null);
       refreshPendingCount();
     });
   };
 
   // ── Obtener ubicación actual ──────────────────────────────────────────────
 
-  /**
-   * Solicita permisos de ubicación y retorna las coordenadas.
-   * Si falla, devuelve el centro geográfico de la Guayana como fallback.
-   */
   const getLocation = async (): Promise<{ lat: number; lng: number }> => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -103,13 +94,9 @@ export default function Scanner() {
     return { lat: 5.0, lng: -63.5 };
   };
 
-  // ── Capturar foto → guardar local ─────────────────────────────────────────
+  // ── Capturar foto → mostrar preview ───────────────────────────────────────
 
-  /**
-   * Captura una foto con la cámara, la persiste en el filesystem,
-   * obtiene la ubicación y guarda un borrador local.
-   */
-  const processScan = async () => {
+  const handleCapture = async () => {
     if (!cameraRef.current || phase !== 'scanning') return;
 
     try {
@@ -121,12 +108,25 @@ export default function Scanner() {
       });
       if (!photo?.uri) throw new Error(i18n.t('common.error'));
 
+      setPreviewUri(photo.uri);
+      setPhase('preview');
+    } catch (err: any) {
+      setPhase('scanning');
+      Alert.alert('Error', err?.message ?? i18n.t('common.error'), [{ text: 'OK' }]);
+    }
+  };
+
+  // ── Confirmar y guardar borrador ──────────────────────────────────────────
+
+  const handleConfirmUpload = async () => {
+    if (!previewUri) return;
+
+    try {
       setPhase('saving');
 
-      // Copiar a almacenamiento persistente (el cache se borra)
       const fileName = `ecos_${Date.now()}.jpg`;
       const permanentUri = `${FileSystem.documentDirectory}${fileName}`;
-      await FileSystem.copyAsync({ from: photo.uri, to: permanentUri });
+      await FileSystem.copyAsync({ from: previewUri, to: permanentUri });
 
       const location = await getLocation();
 
@@ -146,14 +146,20 @@ export default function Scanner() {
 
       showSavedFeedback();
     } catch (err: any) {
-      setPhase('scanning');
+      setPhase('preview');
       Alert.alert('Error', err?.message ?? i18n.t('common.error'), [{ text: 'OK' }]);
     }
   };
 
-  // ── Cargar desde galería → guardar local ──────────────────────────────────
+  // ── Retomar (descartar preview) ───────────────────────────────────────────
 
-  /** Abre la galería, selecciona una imagen y navega al flujo de crear registro (mapa). */
+  const handleRetake = () => {
+    setPreviewUri(null);
+    setPhase('scanning');
+  };
+
+  // ── Cargar desde galería → navegar a crear registro ───────────────────────
+
   const handlePickMedia = async () => {
     if (phase !== 'scanning') return;
 
@@ -166,7 +172,6 @@ export default function Scanner() {
     if (result.canceled || !result.assets?.[0]) return;
     const asset = result.assets[0];
 
-    // Navegar al flujo de carga (que abrirá el mapa y luego guardará)
     router.push({
       pathname: '/create-record',
       params: {
@@ -201,7 +206,7 @@ export default function Scanner() {
 
   // ── Derived state ─────────────────────────────────────────────────────────
 
-  const isBusy = phase !== 'scanning';
+  const isBusy = phase === 'capturing' || phase === 'saving';
 
   const statusLabel =
     phase === 'capturing' ? i18n.t('scanner.capturing') :
@@ -211,21 +216,30 @@ export default function Scanner() {
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
-      {/* Cámara en vivo */}
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      {/* Cámara en vivo (oculta durante preview) */}
+      {phase !== 'preview' && phase !== 'saved' && (
+        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      )}
 
-      {/* Marco de captura limpio */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        <View style={styles.reticleContainer}>
-          <View style={[styles.corner, styles.TL]} />
-          <View style={[styles.corner, styles.TR]} />
-          <View style={[styles.corner, styles.BL]} />
-          <View style={[styles.corner, styles.BR]} />
+      {/* Preview de foto capturada */}
+      {phase === 'preview' && previewUri && (
+        <Image source={{ uri: previewUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      )}
+
+      {/* Marco de captura (solo en modo scanning) */}
+      {phase === 'scanning' && (
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <View style={styles.reticleContainer}>
+            <View style={[styles.corner, styles.TL]} />
+            <View style={[styles.corner, styles.TR]} />
+            <View style={[styles.corner, styles.BL]} />
+            <View style={[styles.corner, styles.BR]} />
+          </View>
         </View>
-      </View>
+      )}
 
       {/* Badge de pendientes */}
-      {pendingCount > 0 && (
+      {pendingCount > 0 && phase === 'scanning' && (
         <TouchableOpacity
           style={[styles.pendingBadge, { backgroundColor: theme.primary }]}
           onPress={() => router.push({ pathname: '/(tabs)/profile', params: { tab: 'pending' } })}
@@ -236,18 +250,18 @@ export default function Scanner() {
         </TouchableOpacity>
       )}
 
-      {/* Feedback de "Guardado ✓" */}
+      {/* Feedback de "Subido a borrador ✓" */}
       {phase === 'saved' && (
         <Animated.View style={[styles.savedOverlay, { opacity: fadeAnim }]}>
           <View style={[styles.savedCard, { backgroundColor: theme.card }]}>
             <Ionicons name="checkmark-circle" size={64} color={theme.primary} />
-            <Text style={[styles.savedTitle, { color: theme.text }]}>{i18n.t('scanner.saved')}</Text>
-            <Text style={[styles.savedSubtext, { color: theme.subtext }]}>{i18n.t('scanner.savedSubtext')}</Text>
+            <Text style={[styles.savedTitle, { color: theme.text }]}>{i18n.t('scanner.savedToDraft')}</Text>
+            <Text style={[styles.savedSubtext, { color: theme.subtext }]}>{i18n.t('scanner.savedToDraftSubtext')}</Text>
           </View>
         </Animated.View>
       )}
 
-      {/* Overlay de carga */}
+      {/* Overlay de carga (capturing/saving) */}
       {(phase === 'capturing' || phase === 'saving') && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={theme.primary} />
@@ -255,33 +269,50 @@ export default function Scanner() {
         </View>
       )}
 
-      {/* Botones de acción */}
-      <View style={styles.bottomBar}>
-        <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity
-            style={[styles.sideBtn, isBusy && styles.captureBtnDisabled]}
-            onPress={handlePickMedia}
-            disabled={isBusy}
-          >
-            <Ionicons name="images-outline" size={26} color="#c8deff" />
-            <Text style={styles.sideBtnText}>{i18n.t('scanner.uploadRecord')}</Text>
+      {/* Botones de preview: Retomar / Subir */}
+      {phase === 'preview' && (
+        <View style={styles.previewActions}>
+          <TouchableOpacity style={styles.previewBtn} onPress={handleRetake}>
+            <Ionicons name="camera-reverse-outline" size={28} color="#c8deff" />
+            <Text style={styles.previewBtnText}>{i18n.t('scanner.retake')}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.captureBtn, { backgroundColor: theme.primary }, isBusy && styles.captureBtnDisabled]}
-            onPress={processScan}
-            disabled={isBusy}
-          >
-            {isBusy
-              ? <ActivityIndicator color="#fff" size="small" />
-              : <Ionicons name="scan-circle" size={48} color="#c8deff" />
-            }
+          <TouchableOpacity style={[styles.previewBtnPrimary, { backgroundColor: theme.primary }]} onPress={handleConfirmUpload}>
+            <Ionicons name="cloud-upload-outline" size={28} color="#fff" />
+            <Text style={styles.previewBtnPrimaryText}>{i18n.t('scanner.uploadPhoto')}</Text>
           </TouchableOpacity>
-
-          <View style={styles.sideBtnPlaceholder} />
         </View>
-        <Text style={styles.bottomCaption}>{i18n.t('scanner.scanCaption')}</Text>
-      </View>
+      )}
+
+      {/* Botones de acción (solo en modo scanning) */}
+      {phase === 'scanning' && (
+        <View style={styles.bottomBar}>
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity
+              style={[styles.sideBtn, isBusy && styles.captureBtnDisabled]}
+              onPress={handlePickMedia}
+              disabled={isBusy}
+            >
+              <Ionicons name="images-outline" size={26} color="#c8deff" />
+              <Text style={styles.sideBtnText}>{i18n.t('scanner.uploadRecord')}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.captureBtn, { backgroundColor: theme.primary }, isBusy && styles.captureBtnDisabled]}
+              onPress={handleCapture}
+              disabled={isBusy}
+            >
+              {isBusy
+                ? <ActivityIndicator color="#fff" size="small" />
+                : <Ionicons name="scan-circle" size={48} color="#c8deff" />
+              }
+            </TouchableOpacity>
+
+            <View style={styles.sideBtnPlaceholder} />
+          </View>
+          <Text style={styles.bottomCaption}>{i18n.t('scanner.scanCaption')}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -326,6 +357,25 @@ const styles = StyleSheet.create({
   },
   pendingText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
 
+  // ── Preview actions ────────────────────────────────────────────────────────
+  previewActions: {
+    position: 'absolute', bottom: 50, left: 0, right: 0,
+    flexDirection: 'row', justifyContent: 'center', gap: 24,
+    paddingHorizontal: 40, zIndex: 20,
+  },
+  previewBtn: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 16, borderRadius: 16,
+    backgroundColor: 'rgba(0,0,0,0.6)', borderWidth: 1, borderColor: 'rgba(200,222,255,0.3)',
+  },
+  previewBtnText: { color: '#c8deff', fontSize: 14, fontWeight: '600' },
+  previewBtnPrimary: {
+    flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 16, borderRadius: 16,
+  },
+  previewBtnPrimaryText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
+
+  // ── Bottom bar ─────────────────────────────────────────────────────────────
   bottomBar: { position: 'absolute', bottom: 44, left: 0, right: 0, alignItems: 'center', gap: 10, zIndex: 20 },
   actionButtonsContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', width: '100%', paddingHorizontal: 30 },
   sideBtn: { alignItems: 'center', justifyContent: 'center', width: 80 },
@@ -336,4 +386,3 @@ const styles = StyleSheet.create({
   bottomCaption: { color: 'rgba(180,210,255,0.7)', fontSize: 13, textAlign: 'center', marginTop: 4 },
   statusSubtext: { color: 'rgba(255,255,255,0.65)', fontSize: 11, letterSpacing: 0.5, textAlign: 'center' },
 });
-
