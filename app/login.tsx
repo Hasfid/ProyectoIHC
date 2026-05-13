@@ -7,11 +7,11 @@
  * @module app/login
  */
 
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
-import { useRouter } from 'expo-router';
-import { supabase } from '../lib/supabase';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Alert, Image, ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -67,8 +67,7 @@ export default function LoginScreen() {
       if (error) {
         setLoading(false);
         if (Platform.OS === 'web') console.error('[Login] Error de Supabase:', error);
-        
-        // Personalizamos el error
+
         if (error.message.includes('Invalid login credentials')) {
           Alert.alert('Error', 'Correo o contraseña incorrectos.');
         } else {
@@ -78,9 +77,8 @@ export default function LoginScreen() {
       }
 
       if (Platform.OS === 'web') console.log('[Login] Éxito');
-      // Éxito - El AppIndex nos redirigirá automáticamente
       router.replace('/(tabs)');
-      
+
     } catch (err) {
       if (Platform.OS === 'web') console.error('[Login] Error inesperado:', err);
       Alert.alert('Error', 'Ocurrió un problema de conexión.');
@@ -90,169 +88,169 @@ export default function LoginScreen() {
   };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container} 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        {/* Gradient background simulated with layered views */}
-        <View style={styles.gradientBackground}>
-          <View style={styles.gradientLayer1} />
-          <View style={styles.gradientLayer2} />
-        </View>
+    <View style={styles.container}>
+      {/* ── FONDO: Imagen FIJA (NUNCA SE MUEVE) ── */}
+      <ImageBackground
+        source={require('../assets/foto-cascada.png')}
+        style={styles.backgroundImage}
+        resizeMode="cover"
+      >
+        <View style={styles.overlay} />
+      </ImageBackground>
 
-        {/* Logo / Top Section */}
-        <View style={styles.topSection}>
-          <View style={styles.logoPlaceholder}>
-            <Ionicons name="leaf" size={48} color="#FFFFFF" />
-          </View>
-          <Text style={styles.logoText}>Ecos</Text>
-          <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
-        </View>
-
-        {/* White card */}
-        <View style={styles.card}>
-        <Text style={styles.title}>Iniciar Sesión</Text>
-
-        {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
-
-        {/* Email input with icon */}
-        <Text style={styles.label}>Correo Electrónico</Text>
-        <View style={[styles.inputContainer, errors.email ? styles.inputError : null]}>
-          <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="tu@correo.com"
-            placeholderTextColor="#AAAAAA"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            maxLength={60}
-            value={email}
-            onChangeText={(text) => { setEmail(text); setErrors({...errors, email: '', general: ''}); }}
-            onSubmitEditing={handleLogin}
-          />
-        </View>
-        {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
-
-        {/* Password input with icon */}
-        <Text style={styles.label}>Contraseña</Text>
-        <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
-          <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="Mínimo 8 caracteres"
-            placeholderTextColor="#AAAAAA"
-            secureTextEntry={!showPassword}
-            maxLength={30}
-            value={password}
-            onChangeText={(text) => { setPassword(text); setErrors({...errors, password: '', general: ''}); }}
-            onSubmitEditing={handleLogin}
-          />
-          <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-            <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#999" />
-          </TouchableOpacity>
-        </View>
-        <Text style={styles.hintText}>Mínimo 8 caracteres</Text>
-        {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
-
-        {/* Login button */}
-        <TouchableOpacity 
-          style={[styles.button, loading && styles.buttonDisabled]} 
-          onPress={handleLogin}
-          disabled={loading}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.buttonText}>{loading ? 'Cargando...' : 'Entrar'}</Text>
-        </TouchableOpacity>
-
-        {/* Separator */}
-        <View style={styles.separatorRow}>
-          <View style={styles.separatorLine} />
-          <Text style={styles.separatorText}>o continuar con</Text>
-          <View style={styles.separatorLine} />
-        </View>
-
-        {/* Social buttons placeholder */}
-        <View style={styles.socialRow}>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-            <Ionicons name="logo-google" size={22} color="#333333" />
-            <Text style={styles.socialButtonText}>Google</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
-            <Ionicons name="logo-apple" size={22} color="#333333" />
-            <Text style={styles.socialButtonText}>Apple</Text>
-          </TouchableOpacity>
-        </View>
-
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>¿No tienes cuenta? </Text>
-            <TouchableOpacity onPress={() => router.push('/register')}>
-              <Text style={styles.linkText}>Crear cuenta</Text>
-            </TouchableOpacity>
+          {/* Logo / Top Section */}
+          <View style={styles.topSection}>
+            <Image
+              source={require('../assets/logo-ecos.png')}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
+            <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
           </View>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+
+          {/* Card BLANCA */}
+          <View style={styles.card}>
+            <Text style={styles.title}>Iniciar Sesión</Text>
+
+            {errors.general ? <Text style={styles.errorTextGeneral}>{errors.general}</Text> : null}
+
+            <Text style={styles.label}>Correo Electrónico</Text>
+            <View style={[styles.inputContainer, errors.email ? styles.inputError : null]}>
+              <Ionicons name="mail-outline" size={20} color="#999" style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="tu@correo.com"
+                placeholderTextColor="#AAAAAA"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                maxLength={60}
+                value={email}
+                onChangeText={(text) => { setEmail(text); setErrors({ ...errors, email: '', general: '' }); }}
+                onSubmitEditing={handleLogin}
+              />
+            </View>
+            {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
+
+            <Text style={styles.label}>Contraseña</Text>
+            <View style={[styles.passwordContainer, errors.password ? styles.inputError : null]}>
+              <Ionicons name="lock-closed-outline" size={20} color="#999" style={styles.inputIcon} />
+              <TextInput
+                style={styles.passwordInput}
+                placeholder="Mínimo 8 caracteres"
+                placeholderTextColor="#AAAAAA"
+                secureTextEntry={!showPassword}
+                maxLength={30}
+                value={password}
+                onChangeText={(text) => { setPassword(text); setErrors({ ...errors, password: '', general: '' }); }}
+                onSubmitEditing={handleLogin}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={22} color="#999" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.hintText}>Mínimo 8 caracteres</Text>
+            {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
+
+            <TouchableOpacity
+              style={[styles.button, loading && styles.buttonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              <Text style={styles.buttonText}>{loading ? 'Cargando...' : 'Entrar'}</Text>
+            </TouchableOpacity>
+
+            <View style={styles.separatorRow}>
+              <View style={styles.separatorLine} />
+              <Text style={styles.separatorText}>o continuar con</Text>
+              <View style={styles.separatorLine} />
+            </View>
+
+            <View style={styles.socialRow}>
+              <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+                <Ionicons name="logo-google" size={22} color="#333333" />
+                <Text style={styles.socialButtonText}>Google</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+                <Ionicons name="logo-apple" size={22} color="#333333" />
+                <Text style={styles.socialButtonText}>Apple</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.footerRow}>
+              <Text style={styles.footerText}>¿No tienes cuenta? </Text>
+              <TouchableOpacity onPress={() => router.push('/register')}>
+                <Text style={styles.linkText}>Crear cuenta</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#2D5A27',
+    backgroundColor: '#1a3a1a',
+  },
+  flex: {
+    flex: 1,
   },
 
-  /* ── Gradient background (simulated) ── */
-  gradientBackground: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  gradientLayer1: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#2D5A27',
-  },
-  gradientLayer2: {
+  /* ── Fondo FIJO (NUNCA SE MUEVE) ── */
+  backgroundImage: {
     position: 'absolute',
-    bottom: 0,
+    top: 0,
     left: 0,
     right: 0,
-    height: '60%',
-    backgroundColor: '#4A7C3F',
-    opacity: 0.5,
-    borderTopLeftRadius: 200,
-    borderTopRightRadius: 200,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+
+  scrollContent: {
+    flexGrow: 1,
   },
 
   /* ── Top logo section ── */
   topSection: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingTop: 80,
-    minHeight: 280,
+    paddingTop: Platform.OS === 'web' ? 20 : 40,
+    minHeight: Platform.OS === 'web' ? 300 : 320,
   },
-  logoPlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  logoText: {
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: 3,
+  logoImage: {
+    width: Platform.OS === 'web' ? 350 : 280,
+    height: Platform.OS === 'web' ? 350 : 280,
+    marginBottom: 8,
   },
   subtitleText: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
+    fontSize: 16,
+    color: '#FFFFFF',
     marginTop: 4,
-    letterSpacing: 1.5,
-    fontWeight: '500',
+    letterSpacing: 2,
+    fontWeight: '600',
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 4,
   },
 
-  /* ── White card ── */
+  /* ── Card BLANCA ── */
   card: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
@@ -262,7 +260,7 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.15,
     shadowRadius: 20,
     elevation: 12,
     ...(Platform.OS === 'web' && {
@@ -277,11 +275,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     marginBottom: 24,
-    color: '#333333',
+    color: '#1a1a1a',
     textAlign: 'center',
   },
-
-  /* ── Labels ── */
   label: {
     fontSize: 13,
     marginBottom: 8,
@@ -289,8 +285,6 @@ const styles = StyleSheet.create({
     color: '#555555',
     marginLeft: 4,
   },
-
-  /* ── Input fields ── */
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -316,14 +310,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5F5',
   },
   errorText: {
-    color: '#d32f2f',
+    color: '#c62828',
     fontSize: 12,
     marginTop: -10,
     marginBottom: 12,
     marginLeft: 8,
+    fontWeight: '500',
   },
   errorTextGeneral: {
-    color: '#d32f2f',
+    color: '#c62828',
     fontSize: 14,
     marginBottom: 16,
     textAlign: 'center',
@@ -334,8 +329,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     overflow: 'hidden',
   },
-
-  /* ── Password field ── */
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -362,8 +355,6 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginLeft: 8,
   },
-
-  /* ── Button ── */
   button: {
     backgroundColor: '#1B5E20',
     paddingVertical: 14,
@@ -387,8 +378,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-
-  /* ── Separator ── */
   separatorRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -405,8 +394,6 @@ const styles = StyleSheet.create({
     color: '#AAAAAA',
     fontWeight: '500',
   },
-
-  /* ── Social buttons ── */
   socialRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -429,8 +416,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
   },
-
-  /* ── Footer ── */
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -441,7 +426,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   linkText: {
-    color: '#2D5A27',
+    color: '#1B5E20',
     fontSize: 14,
     fontWeight: '700',
     textDecorationLine: 'underline',
