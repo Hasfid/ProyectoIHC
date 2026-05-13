@@ -95,7 +95,9 @@ export default function WeatherWidget() {
         <View style={s.row}>
           <Text style={s.icon}>{current.icon}</Text>
           <Text style={[s.temp, { color: textPrimary }]}>{current.temperature}°</Text>
-          <Text style={[s.label, { color: textSecondary }]} numberOfLines={1}>{current.label}</Text>
+          {Platform.OS === 'web' && (
+            <Text style={[s.label, { color: textSecondary }]} numberOfLines={1}>{current.label}</Text>
+          )}
         </View>
 
         {/* Expandido: detalle + pronóstico */}
@@ -137,8 +139,8 @@ export default function WeatherWidget() {
 const s = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: Platform.OS === 'web' ? 40 : 40,
-    left: Platform.OS === 'web' ? 16 : 12,
+    bottom: Platform.OS === 'web' ? 60 : 40,
+    left: Platform.OS === 'web' ? 56 : 12,
     zIndex: 20,
   },
   chip: {

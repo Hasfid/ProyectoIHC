@@ -643,9 +643,9 @@ export default function MapWeb({
 
   return (
     <View style={styles.container}>
-
-      <MapContainer
-        className={registrationLayout ? 'ecos-map-registration' : undefined}
+      <View style={{ flex: 1, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
+        <MapContainer
+          className={registrationLayout ? 'ecos-map-registration' : undefined}
         center={initialRegion ? [initialRegion.latitude, initialRegion.longitude] : MAP_CENTER_START}
         zoom={initialRegion ? Math.max(5, Math.min(15, Math.round(Math.log2(360 / initialRegion.latitudeDelta)))) : MAP_ZOOM_START}
         maxZoom={15}
@@ -657,6 +657,7 @@ export default function MapWeb({
         boxZoom={true}
         keyboard={true}
         zoomControl={false}
+        attributionControl={false}
       >
 
         <ZoomControl position="bottomright" />
@@ -938,6 +939,7 @@ export default function MapWeb({
           </div>
         )}
       </div>
+      </View>
     </View>
   );
 }
@@ -1031,11 +1033,13 @@ const tagStyle = (color: string, bg: string): React.CSSProperties => ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#fff',
     zIndex: 0,
+    paddingHorizontal: 40,
+    paddingVertical: 20,
   },
   loadingOverlay: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#fff',
   },
 });

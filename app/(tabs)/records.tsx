@@ -36,6 +36,7 @@ export default function RecordsScreen() {
   const [activeSighting, setActiveSighting] = useState<any | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [expandedDesc, setExpandedDesc] = useState(false);
 
   useEffect(() => {
     if (selectedRecord) {
@@ -259,7 +260,8 @@ export default function RecordsScreen() {
         onPress={() => {
           setSelectedRecord(item);
           setActiveSighting(item); // Por defecto el primero
-        }} 
+          setExpandedDesc(false);
+        }}
         onLongPress={() => setPreviewImage(item.media_url)}
         delayLongPress={300}
         style={styles.cardContainer}
@@ -341,7 +343,7 @@ export default function RecordsScreen() {
         visible={!!selectedRecord}
         animationType="slide"
         transparent={true}
-        onRequestClose={() => setSelectedRecord(null)}
+        onRequestClose={() => { setSelectedRecord(null); setExpandedDesc(false); }}
       >
         <BlurView intensity={90} tint="dark" style={styles.modalOverlay}>
           {selectedRecord && (
@@ -462,7 +464,7 @@ export default function RecordsScreen() {
                                 styles.galleryItem, 
                                 activeSighting?.id === sighting.id && styles.galleryItemActive
                               ]}
-                              onPress={() => setActiveSighting(sighting)}
+                              onPress={() => { setActiveSighting(sighting); setExpandedDesc(false); }}
                               onLongPress={() => setPreviewImage(sighting.media_url)}
                               delayLongPress={250}
                             >
@@ -483,9 +485,11 @@ export default function RecordsScreen() {
                   {(activeSighting?.descripcion || selectedRecord.descripcion) ? (
                     <View style={[styles.cultureCard, {marginTop: 20, marginBottom: 40}]}>
                       <Text style={styles.cultureTitle}>Notas del Avistamiento</Text>
-                      <Text style={styles.cultureText}>
-                        {activeSighting?.descripcion || selectedRecord.descripcion}
-                      </Text>
+                      <TouchableOpacity onPress={() => setExpandedDesc(!expandedDesc)} activeOpacity={0.8}>
+                        <Text style={styles.cultureText} numberOfLines={expandedDesc ? undefined : 2}>
+                          {activeSighting?.descripcion || selectedRecord.descripcion}
+                        </Text>
+                      </TouchableOpacity>
                       <Text style={styles.sightingDetailDate}>
                         Registrado el: {activeSighting?.created_at ? new Date(activeSighting.created_at).toLocaleString() : 'Fecha no disponible'}
                       </Text>

@@ -20,6 +20,7 @@ import {
     Dimensions,
     Image,
     Platform,
+    ScrollView,
     StatusBar,
     StyleSheet,
     Text, TextInput, TouchableOpacity, View
@@ -122,9 +123,10 @@ export default function CreateRecordScreen() {
         longitud: loc.lng,
         ia_certeza: fromScanner ? iaCerteza : undefined,
       });
-      setSaving(false);
       setSaved(true);
-      setTimeout(() => setSaved(false), 1000);
+      setTimeout(() => {
+        router.back();
+      }, 1000);
     } catch {
       Alert.alert('Error', 'No se pudo guardar el registro.');
       setSaving(false);
@@ -286,7 +288,12 @@ export default function CreateRecordScreen() {
           <View style={{ width: 40 }} />
         </View>
 
-        <View style={[s.confirmContent, { backgroundColor: theme.background }]}> 
+        <ScrollView
+          style={[s.confirmScroll, { backgroundColor: theme.background }]}
+          contentContainerStyle={s.confirmScrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {mediaUri ? (
             <TouchableOpacity onPress={goToChangePhoto} style={s.photoWrapper} activeOpacity={0.8}>
               <Image source={{ uri: mediaUri }} style={s.confirmImage} />
@@ -298,12 +305,31 @@ export default function CreateRecordScreen() {
 
           <Text style={[s.confirmHint, { color: theme.subtext }]}>{i18n.t('createRecord.reviewHint')}</Text>
 
-          <TouchableOpacity style={[s.locationRow, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]} onPress={goToChangeLocation} activeOpacity={0.8}>
+          <TouchableOpacity
+            style={[s.locationRow, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
+            onPress={goToChangeLocation}
+            activeOpacity={0.8}
+            disabled={saving || saved}
+          >
             <Ionicons name="location-outline" size={24} color={theme.primary} />
             <View style={s.locationTextGroup}>
               <Text style={[s.fieldLabel, { color: theme.subtext }]}>{i18n.t('createRecord.locationLabel')}</Text>
-              <Text style={[s.locationActionText, { color: theme.primary }]}>{i18n.t('createRecord.changeLocationHint')}</Text>
+              {coords ? (
+                <View style={s.coordsHintRow}>
+                  <Text style={[s.coordsInline, { color: theme.text }]} selectable>
+                    {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                  </Text>
+                  <View style={s.locationHintWrap}>
+                    <Text style={[s.locationHintBeside, { color: theme.subtext }]} numberOfLines={3}>
+                      · {i18n.t('createRecord.changeLocationHint')}
+                    </Text>
+                  </View>
+                </View>
+              ) : (
+                <Text style={[s.locationActionText, { color: theme.primary }]}>{i18n.t('createRecord.changeLocationHint')}</Text>
+              )}
             </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
           </TouchableOpacity>
 
           <TextInput
@@ -314,20 +340,27 @@ export default function CreateRecordScreen() {
             placeholderTextColor={theme.placeholder}
             multiline
             numberOfLines={3}
+            editable={!saving && !saved}
           />
 
           <TouchableOpacity
-            style={[s.confirmBtn, (saving || !coords) && { opacity: 0.6 }]}
+            style={[
+              s.saveDraftBtn,
+              (saving || saved || !coords) && s.saveDraftBtnDisabled,
+            ]}
             onPress={confirmAndSave}
-            disabled={saving || !coords}
+            disabled={saving || saved || !coords}
+            activeOpacity={0.85}
           >
-            {saving ? (
+            {saving || saved ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={s.confirmBtnText}>{i18n.t('createRecord.sendToDraft')}</Text>
+              <Text style={s.saveDraftBtnText} numberOfLines={1}>
+                {i18n.t('createRecord.sendToDraft')}
+              </Text>
             )}
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
         {saved && (
           <View style={s.savedToast}>
@@ -433,7 +466,7 @@ const s = StyleSheet.create({
   /** Miniatura: web (registro) arriba a la derecha alineada con la búsqueda; nativo abajo a la derecha */
   miniPreviewWrap: {
     position: 'absolute',
-    right: 16,
+    right: isWeb ? 56 : 16,
     width: 72,
     height: 72,
     borderRadius: 14,
@@ -469,6 +502,32 @@ const s = StyleSheet.create({
   },
   confirmBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
   confirmBtnDisabled: { opacity: 0.5 },
+  saveDraftBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: '#2e7d32',
+    paddingVertical: 18,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    overflow: 'hidden',
+    minHeight: 58,
+    marginTop: 4,
+    elevation: 3,
+    shadowColor: '#2e7d32',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  saveDraftBtnDisabled: { opacity: 0.55 },
+  saveDraftBtnText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+    textAlign: 'center',
+    overflow: 'hidden',
+  },
   mapInstructionBar: { paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#e8f5e9' },
   mapInstructionText: { color: '#2e7d32', fontSize: 14, textAlign: 'center' },
   confirmHeader: {
@@ -478,10 +537,12 @@ const s = StyleSheet.create({
     paddingBottom: 12,
     backgroundColor: '#f8faf9',
   },
-  confirmContent: {
-    flex: 1,
+  confirmScroll: { flex: 1 },
+  confirmScrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
+    paddingBottom: 28,
+    flexGrow: 1,
   },
   confirmImage: {
     width: '100%',
@@ -500,11 +561,31 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   locationRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     padding: 16, borderRadius: 16, backgroundColor: '#e8f5e9',
     marginBottom: 18,
   },
-  locationTextGroup: { flex: 1 },
+  locationTextGroup: { flex: 1, minWidth: 0 },
+  coordsHintRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  coordsInline: {
+    fontSize: 14,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'] as const,
+  },
+  locationHintWrap: {
+    flex: 1,
+    flexBasis: 140,
+    minWidth: 0,
+  },
+  locationHintBeside: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
   locationActionText: { color: '#2e7d32', fontSize: 13 },
   fieldLabel: { color: '#777', fontSize: 13, marginBottom: 4, fontWeight: '700' },
   descriptionInput: {

@@ -1,9 +1,9 @@
 /**
- * login.tsx — Pantalla de inicio de sesión.
- *
- * Validaciones client-side: formato de email, longitud mínima de contraseña.
- * Autenticación via Supabase Auth con mensajes de error en español.
- *
+ * Screen component for user authentication.
+ * 
+ * Implements client-side validation for email formats and password length,
+ * and handles authentication using Supabase Auth.
+ * 
  * @module app/login
  */
 
@@ -21,7 +21,11 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '', general: '' });
 
-  /** Valida campos y autentica con Supabase Auth */
+  /**
+   * Validates form inputs and attempts authentication via Supabase.
+   * Handles error state management and success routing.
+   * @returns {Promise<void>}
+   */
   const handleLogin = async () => {
     let newErrors = { email: '', password: '', general: '' };
     let hasError = false;
@@ -89,7 +93,6 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── FONDO: Imagen FIJA (NUNCA SE MUEVE) ── */}
       <ImageBackground
         source={require('../assets/foto-cascada.png')}
         style={styles.backgroundImage}
@@ -108,7 +111,6 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo / Top Section */}
           <View style={styles.topSection}>
             <Image
               source={require('../assets/logo-ecos.png')}
@@ -118,7 +120,6 @@ export default function LoginScreen() {
             <Text style={styles.subtitleText}>Guayana Biodiversa</Text>
           </View>
 
-          {/* Card BLANCA */}
           <View style={styles.card}>
             <Text style={styles.title}>Iniciar Sesión</Text>
 
@@ -191,7 +192,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  /* ── Fondo FIJO (NUNCA SE MUEVE) ── */
   backgroundImage: {
     position: 'absolute',
     top: 0,
@@ -210,7 +210,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  /* ── Top logo section ── */
   topSection: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -233,7 +232,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
 
-  /* ── Card BLANCA ── */
   card: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,

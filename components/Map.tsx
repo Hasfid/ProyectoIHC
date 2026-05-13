@@ -1,13 +1,7 @@
 /**
- * Map.tsx — Mapa satelital inmersivo para mobile (iOS/Android).
- *
- * Características:
- * - Vista satelital real (mapType="satellite")
- * - Animación de vuelo automática al cargar (animateToRegion)
- * - Marcadores circulares con imagen del avistamiento y borde blanco + glow verde
- * - Tarjeta flotante glassmorphism estilo HUD
- * - Polígono Guayana con borde neón esmeralda
- * - Límites de zoom para evitar cuadros grises
+ * Immersive map component rendering georeferenced data and user location.
+ * Provides interactive pins, a custom geofence polygon (Guayana region), 
+ * and a Nominatim-powered search functionality.
  *
  * @module components/Map
  */
@@ -44,7 +38,6 @@ const GUAYANA_VIEWBOX = [
   Math.min(...GUAYANA_POLYGON.map(p => p.latitude)),
 ] as [number, number, number, number];
 
-/** Región inicial: vista general del país */
 const INITIAL_REGION = {
   latitude: 4.5,
   longitude: -64.0,
@@ -74,8 +67,9 @@ const formatDate = (d: string) => {
 };
 
 /**
- * Desplaza ligeramente los pines que comparten exactamente la misma coordenada
- * para que no queden 100% ocultos uno detrás de otro.
+ * Calculates a spiral offset for markers sharing identical coordinates to ensure visibility.
+ * @param {Array<any>} records - The array of map records to process.
+ * @returns {Array<any>} The records with adjusted _renderLat and _renderLng properties.
  */
 const offsetOverlappingRecords = (records: any[]) => {
   const seen: Record<string, number> = {};
@@ -87,9 +81,8 @@ const offsetOverlappingRecords = (records: any[]) => {
     const key = `${lat.toFixed(4)},${lng.toFixed(4)}`;
     if (seen[key] !== undefined) {
       seen[key]++;
-      // ~20-30 metros de separación por cada registro repetido en patrón espiral
       const offset = seen[key] * 0.0002; 
-      const angle = seen[key] * (Math.PI / 3); // 60 grados
+      const angle = seen[key] * (Math.PI / 3);
       lat += Math.cos(angle) * offset;
       lng += Math.sin(angle) * offset;
     } else {
@@ -109,10 +102,8 @@ export default function Map({
   onHelpPress: _onHelpPress,
 }: {
   onRegionChangeComplete?: (region: any) => void;
-  /** Solo aplica en `Map.web`; en nativo se ignora */
   registrationLayout?: boolean;
   initialRegion?: any;
-  /** Solo aplica en `Map.web`; en nativo se ignora */
   onHelpPress?: () => void;
 }) {
   const [records, setRecords] = useState<any[]>([]);
@@ -174,7 +165,6 @@ export default function Map({
       return;
     }
 
-    // Si no hay resultados, hacer búsqueda rápida
     setSearching(true);
     try {
       const [west, north, east, south] = GUAYANA_VIEWBOX;
@@ -213,7 +203,6 @@ export default function Map({
     Keyboard.dismiss();
   };
 
-  /* Ubicación en tiempo real del usuario (solo en memoria, no se almacena) */
   useEffect(() => {
     let isMounted = true;
     (async () => {
@@ -248,7 +237,6 @@ export default function Map({
   }, []);
 
   useEffect(() => {
-    // Cargar registros de Supabase
     (async () => {
       try {
         const { data, error } = await supabase.from('registros').select('*');
@@ -259,8 +247,6 @@ export default function Map({
       }
     })();
 
-    // Zoom suave hacia el centro actual solamente si la vista es muy alta,
-    // sin moverse a un destino fijo.
     const timer = setTimeout(() => {
       if (mapRef.current && currentRegion.latitudeDelta > 10) {
         const targetLatitudeDelta = Math.max(
@@ -308,7 +294,6 @@ export default function Map({
         }}
         onPress={closeCard}
       >
-        {/* Máscara: oscurece el exterior de la Guayana y mantiene el interior claro */}
         <Polygon
           coordinates={WORLD_REGION}
           holes={[GUAYANA_REGION]}
@@ -316,7 +301,6 @@ export default function Map({
           strokeColor="rgba(0, 0, 0, 0)"
         />
 
-        {/* Etiqueta flotante que solo se muestra desde una vista elevada */}
         {currentRegion.latitudeDelta >= 3.0 && (
           <Marker coordinate={GUAYANA_LABEL_POSITION} tracksViewChanges={false} tappable={false} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={s.guayanaLabel} pointerEvents="none">
@@ -325,7 +309,6 @@ export default function Map({
           </Marker>
         )}
 
-        {/* Contorno neón esmeralda de la Guayana */}
         <Polygon
           coordinates={GUAYANA_REGION}
           fillColor="transparent"
@@ -334,7 +317,6 @@ export default function Map({
           lineDashPattern={[6, 4]}
         />
 
-        {/* Marcadores circulares con imagen */}
         {records.map((record) => {
           const lat = record._renderLat;
           const lng = record._renderLng;
@@ -347,9 +329,7 @@ export default function Map({
               onPress={() => handleMarkerPress(record)}
             >
               <View style={s.pin}>
-                {/* Anillo de glow verde */}
                 <View style={s.pinGlow}>
-                  {/* Círculo blanco con imagen */}
                   <View style={s.pinCircle}>
                     {record.media_url ? (
                       <Image
@@ -367,7 +347,6 @@ export default function Map({
           );
         })}
 
-        {/* Ubicación del usuario: círculo de 5km */}
         {userLocation && (
           <>
             <Circle
@@ -391,7 +370,6 @@ export default function Map({
         )}
       </MapView>
 
-      {/* Barra de búsqueda de ubicación */}
       <View style={s.searchContainer}>
         <View style={[s.searchBar, { backgroundColor: isDark ? 'rgba(22,35,51,0.92)' : 'rgba(255,255,255,0.92)', borderColor: isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.1)' }]}>
           <Ionicons name="search" size={18} color={isDark ? '#34d399' : theme.muted} />
@@ -429,16 +407,13 @@ export default function Map({
         )}
       </View>
 
-      {/* Tarjeta flotante glassmorphism HUD */}
       {selected && (
         <View style={s.cardWrapper} pointerEvents="box-none">
           <View style={s.card}>
-            {/* Botón cerrar */}
             <TouchableOpacity style={s.cardClose} onPress={closeCard}>
               <Ionicons name="close" size={16} color="#34d399" />
             </TouchableOpacity>
 
-            {/* Nombre */}
             <Text style={s.cardTitle} numberOfLines={1}>
               {(selected.nombre_tradicional || '—').toUpperCase()}
             </Text>
@@ -448,7 +423,6 @@ export default function Map({
               </Text>
             ) : null}
 
-            {/* Imagen / Media */}
             {selected.media_url ? (
               <View style={s.cardImageWrap}>
                 <Image source={{ uri: selected.media_url }} style={s.cardImage} resizeMode="cover" />
@@ -462,12 +436,10 @@ export default function Map({
               </View>
             )}
 
-            {/* Descripción */}
             {selected.descripcion ? (
               <Text style={s.cardDesc} numberOfLines={3}>{selected.descripcion}</Text>
             ) : null}
 
-            {/* Meta: coordenadas + fecha */}
             <View style={s.cardMetaRow}>
               <View style={s.cardMetaBadge}>
                 <Text style={s.cardMetaText}>
@@ -481,7 +453,6 @@ export default function Map({
               ) : null}
             </View>
 
-            {/* Tags */}
             {(selected.alimentacion || selected.habitat) ? (
               <View style={s.cardTagsRow}>
                 {selected.alimentacion ? (
@@ -583,7 +554,6 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(52, 211, 153, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    // Sombra exterior glow verde
     ...Platform.select({
       ios: {
         shadowColor: '#34d399',
@@ -606,7 +576,6 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    // Sombra del propio círculo
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -639,7 +608,6 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(52, 211, 153, 0.3)',
     padding: 14,
-    // Sombra profunda
     ...Platform.select({
       ios: {
         shadowColor: '#000',

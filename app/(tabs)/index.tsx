@@ -11,7 +11,7 @@ import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Platform, StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
 import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
 import { i18n } from '../../lib/i18n';
@@ -22,6 +22,7 @@ export default function DiscoverScreen() {
   const router = useRouter();
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false);
 
   const fetchUnreadMessages = async () => {
     try {
@@ -96,11 +97,58 @@ export default function DiscoverScreen() {
 
       <WeatherWidget />
 
-      {/* Botón de ayuda - Web: esquina superior derecha */}
+      {/* Menú Hamburguesa de ayuda - Web: esquina superior derecha */}
       {Platform.OS === 'web' && (
-        <TouchableOpacity style={[styles.helpButtonWeb, { backgroundColor: theme.overlay }]} onPress={() => router.push('/help')}>
-          <Ionicons name="help-circle" size={24} color={theme.primary} />
-        </TouchableOpacity>
+        <View style={styles.webHelpContainer}>
+          <TouchableOpacity style={[styles.helpButtonWeb, { backgroundColor: theme.overlay }]} onPress={() => setHelpMenuOpen(!helpMenuOpen)}>
+            <Ionicons name={helpMenuOpen ? "close" : "help-circle"} size={24} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Panel lateral derecho de ayuda */}
+      {Platform.OS === 'web' && helpMenuOpen && (
+        <View style={[styles.sideRibbonMenu, { backgroundColor: theme.surface, borderLeftColor: theme.border }]}>
+          <View style={{ height: 40, justifyContent: 'center', marginBottom: 20 }}>
+            <Text style={[styles.hamburgerTitle, { color: theme.text, marginBottom: 0 }]}>{i18n.t('help.title')}</Text>
+          </View>
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+            
+            <View style={styles.hamburgerItem}>
+              <Ionicons name="leaf" size={20} color={theme.primary} style={{ marginTop: 2 }} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('help.whatIsEcos')}</Text>
+                <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{i18n.t('help.whatIsEcosDesc')}</Text>
+              </View>
+            </View>
+
+            <Text style={{ fontSize: 15, fontWeight: 'bold', color: theme.text, marginTop: 10, marginBottom: 12 }}>{i18n.t('help.screens')}</Text>
+
+            {[
+              { icon: 'compass-outline', titleKey: 'help.discoverTitle', descKey: 'help.discoverDesc' },
+              { icon: 'scan-outline', titleKey: 'help.scannerTitle', descKey: 'help.scannerDesc' },
+              { icon: 'videocam-outline', titleKey: 'help.observatoryTitle', descKey: 'help.observatoryDesc' },
+              { icon: 'albums-outline', titleKey: 'help.recordsTitle', descKey: 'help.recordsDesc' },
+              { icon: 'person-outline', titleKey: 'help.profileTitle', descKey: 'help.profileDesc' },
+            ].map((s) => (
+              <View key={s.titleKey} style={styles.hamburgerItem}>
+                <Ionicons name={s.icon as any} size={20} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t(s.titleKey)}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{i18n.t(s.descKey)}</Text>
+                </View>
+              </View>
+            ))}
+
+            <View style={[styles.hamburgerItem, { marginTop: 16 }]}>
+              <Ionicons name="heart-outline" size={20} color={theme.primary} style={{ marginTop: 2 }} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('help.mission')}</Text>
+                <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{i18n.t('help.missionDesc')}</Text>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
       )}
 
       {/* Web: Botón de carga de registro integrado en el mapa */}
@@ -221,10 +269,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: 'bold',
   },
-  helpButtonWeb: {
+  webHelpContainer: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 36,
+    right: 56,
+    zIndex: 1000,
+    alignItems: 'flex-end',
+  },
+  helpButtonWeb: {
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -235,7 +287,43 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
-    zIndex: 1000,
+  },
+  sideRibbonMenu: {
+    position: 'absolute',
+    top: 20,
+    right: 40,
+    bottom: 20,
+    width: 320,
+    borderLeftWidth: 1,
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    padding: 20,
+    paddingTop: 16, // Alineado con el contenedor del botón (top: 36 - 20 = 16)
+    shadowColor: '#000',
+    shadowOffset: { width: -4, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+    zIndex: 999,
+  },
+  hamburgerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  hamburgerItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  hamburgerItemTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  hamburgerItemDesc: {
+    fontSize: 12,
+    lineHeight: 18,
   },
   helpButton: {
     width: 60,
@@ -247,7 +335,7 @@ const styles = StyleSheet.create({
   // Scanner web styles
   scannerButtonContainer: {
     position: 'absolute',
-    bottom: 24,
+    bottom: 44,
     left: 0,
     right: 0,
     alignItems: 'center',

@@ -1,14 +1,7 @@
 /**
  * @module TabLayout
- * Configuración de la navegación por pestañas (Tabs) ubicada en la parte inferior.
- * Utiliza un `MaterialTopTabNavigator` posicionado abajo para permitir swipe entre pantallas.
- * 
- * Pestañas:
- * - Descubrir (index): Mapa interactivo.
- * - Observatorio: Feed social y streaming en vivo.
- * - Escáner: Identificación de especies por cámara.
- * - Registros: Historial de avistamientos.
- * - Perfil: Gestión de usuario y borradores offline.
+ * Core navigation layout for the primary application tabs.
+ * Uses a MaterialTopTabNavigator to support swipe gestures while visually positioned at the bottom on mobile.
  */
 
 import { Ionicons } from '@expo/vector-icons';
@@ -59,16 +52,16 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
 
   return (
     <View style={[webStyles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }, isSmallScreen && { paddingHorizontal: 8 }]}>
-      {/* IZQUIERDA: LOGO */}
       <View style={webStyles.leftContainer}>
-        <Image
-          source={require('../../assets/logo-ecos.png')}
-          style={webStyles.logoImage}
-          resizeMode="contain"
-        />
+        <TouchableOpacity onPress={() => navigation.navigate('index')}>
+          <Image
+            source={require('../../assets/logo-ecos.png')}
+            style={webStyles.logoImage}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
       </View>
 
-      {/* CENTRO: PESTAÑAS (Descubrir, Observatorio, Escáner, Registros) */}
       <View style={webStyles.centerContainer}>
         {state.routes.map((route: any, index: number) => {
           if (route.name === 'profile' || route.name === 'scanner') return null;
@@ -109,7 +102,6 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
         })}
       </View>
 
-      {/* DERECHA: MENSAJERÍA, NOTIFICACIONES Y PERFIL */}
       <View style={[webStyles.rightContainer, isSmallScreen && { gap: 4, flex: 1.5 }]}>
         <TouchableOpacity
           style={[
@@ -148,18 +140,18 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
               style={[
                 webStyles.iconBtn,
                 state.index === 4 && webStyles.iconBtnActive,
-                { marginRight: 8, backgroundColor: theme.surface, borderColor: theme.border },
+                { marginRight: 8, backgroundColor: theme.mode === 'dark' ? '#111924' : '#f0f2f5', borderColor: theme.border },
                 isSmallScreen && { width: 32, height: 32 }
               ]}
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
-              <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={isSmallScreen ? 18 : 22} color={state.index === 4 ? theme.primary : theme.text} />
+              <Ionicons name="person" size={isSmallScreen ? 18 : 22} color="#000" />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setMenuOpen(!menuOpen)}
-              style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: theme.surface, borderRadius: 10, padding: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1 }}
+              style={{ position: 'absolute', bottom: 0, right: 0, backgroundColor: theme.mode === 'dark' ? '#111924' : '#f0f2f5', borderRadius: 10, padding: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1 }}
             >
-              <Ionicons name="chevron-down" size={14} color={theme.text} />
+              <Ionicons name="settings" size={14} color={theme.text} />
             </TouchableOpacity>
           </View>
 
@@ -300,7 +292,11 @@ const webStyles = StyleSheet.create({
   },
 });
 
-/** Componente principal de navegación por pestañas */
+/**
+ * Primary tab layout component managing the main application navigation flow.
+ * Handles notification synchronization and unread message counters via Supabase Realtime.
+ * @returns {React.ReactElement} The tab navigator layout.
+ */
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
