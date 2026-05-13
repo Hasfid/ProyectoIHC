@@ -606,7 +606,11 @@ export default function ObservatoryScreen() {
                     )}
                   </View>
                   <Text style={[styles.postTitle, { color: theme.text }]}>{post.titulo}</Text>
-                  <Text style={[styles.postDescription, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  <TouchableOpacity onPress={() => toggleCommentSection(post.id)} activeOpacity={0.8}>
+                    <Text style={[styles.postDescription, { color: theme.subtext }]} numberOfLines={activeCommentPost === post.id ? undefined : 2}>
+                      {post.descripcion}
+                    </Text>
+                  </TouchableOpacity>
 
                   <View style={styles.postActionsRow}>
                     <TouchableOpacity

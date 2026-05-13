@@ -165,6 +165,7 @@ export default function ProfileScreen() {
   const [editDescription, setEditDescription] = useState('');
   const [editPhoto, setEditPhoto] = useState<string | null>(null);
   const [usernameError, setUsernameError] = useState('');
+  const [expandedRecordDesc, setExpandedRecordDesc] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [stats, setStats] = useState({ followers: 0, following: 0, records: 0 });
@@ -1001,7 +1002,7 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         key={record.id}
                         style={styles.gridItem}
-                        onPress={() => setSelectedRecord(record)}
+                        onPress={() => { setSelectedRecord(record); setExpandedRecordDesc(false); }}
                         activeOpacity={0.8}
                       >
                         <Image source={{ uri: record.media_url }} style={styles.gridImage} />
@@ -1112,7 +1113,11 @@ export default function ProfileScreen() {
                       <Ionicons name="trash-outline" size={20} color={theme.error} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  <TouchableOpacity onPress={() => toggleCommentSection(post.id)} activeOpacity={0.8}>
+                    <Text style={[styles.postCardDesc, { color: theme.subtext }]} numberOfLines={profileActiveComment === post.id ? undefined : 2}>
+                      {post.descripcion}
+                    </Text>
+                  </TouchableOpacity>
                   <Text style={[styles.postCardDate, { color: theme.muted }]}>
                     {new Date(post.created_at).toLocaleDateString('es-VE')}
                   </Text>
@@ -1192,7 +1197,7 @@ export default function ProfileScreen() {
           visible={!!selectedRecord}
           animationType="slide"
           transparent={true}
-          onRequestClose={() => { setSelectedRecord(null); setEditingRecord(null); }}
+          onRequestClose={() => { setSelectedRecord(null); setEditingRecord(null); setExpandedRecordDesc(false); }}
         >
           <View style={styles.recordModalOverlay}>
             {selectedRecord && (
@@ -1201,7 +1206,7 @@ export default function ProfileScreen() {
                   <Image source={{ uri: selectedRecord.media_url }} style={styles.recordModalImage} />
                   <TouchableOpacity
                     style={styles.recordModalClose}
-                    onPress={() => { setSelectedRecord(null); setEditingRecord(null); }}
+                    onPress={() => { setSelectedRecord(null); setEditingRecord(null); setExpandedRecordDesc(false); }}
                   >
                     <Ionicons name="close" size={24} color="#fff" />
                   </TouchableOpacity>
@@ -1241,9 +1246,11 @@ export default function ProfileScreen() {
                         {selectedRecord.nombre_cientifico ? (
                           <Text style={styles.recordModalScientific}>{selectedRecord.nombre_cientifico}</Text>
                         ) : null}
-                        <Text style={styles.recordModalDesc}>
-                          {selectedRecord.descripcion || 'Sin descripción'}
-                        </Text>
+                        <TouchableOpacity onPress={() => setExpandedRecordDesc(!expandedRecordDesc)} activeOpacity={0.8}>
+                          <Text style={styles.recordModalDesc} numberOfLines={expandedRecordDesc ? undefined : 2}>
+                            {selectedRecord.descripcion || 'Sin descripción'}
+                          </Text>
+                        </TouchableOpacity>
 
                         {/* Enriquecimiento IA */}
                         {loadingEnrichedData ? (
