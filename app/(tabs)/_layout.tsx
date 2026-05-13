@@ -16,10 +16,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { withLayoutContext } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { DeviceEventEmitter, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { DeviceEventEmitter, Image, Platform, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NOTIFICATION_UPDATED_EVENT } from '../../lib/drafts';
-import { i18n, changeLanguage, LANGUAGE_CHANGED_EVENT } from '../../lib/i18n';
+import { changeLanguage, i18n, LANGUAGE_CHANGED_EVENT } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
 
@@ -27,7 +27,6 @@ const { Navigator } = createMaterialTopTabNavigator();
 const MaterialTopTabs = withLayoutContext(Navigator);
 
 import { useRouter } from 'expo-router';
-// Import TouchableOpacity just in case it's not
 import { TouchableOpacity } from 'react-native';
 
 const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessages }: any) => {
@@ -62,14 +61,17 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
     <View style={[webStyles.container, { backgroundColor: theme.surface, borderBottomColor: theme.border }, isSmallScreen && { paddingHorizontal: 8 }]}>
       {/* IZQUIERDA: LOGO */}
       <View style={webStyles.leftContainer}>
-        <Ionicons name="leaf" size={28} color="#2e7d32" />
-        {!isSmallScreen && <Text style={webStyles.logoText}>Ecos</Text>}
+        <Image
+          source={require('../../assets/logo-ecos.png')}
+          style={webStyles.logoImage}
+          resizeMode="contain"
+        />
       </View>
 
       {/* CENTRO: PESTAÑAS (Descubrir, Observatorio, Escáner, Registros) */}
       <View style={webStyles.centerContainer}>
         {state.routes.map((route: any, index: number) => {
-          if (route.name === 'profile' || route.name === 'scanner') return null; // Perfil va a la derecha, scanner está integrado en el mapa
+          if (route.name === 'profile' || route.name === 'scanner') return null;
 
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -91,7 +93,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
               key={route.key}
               onPress={onPress}
               style={[
-                webStyles.tabItem, 
+                webStyles.tabItem,
                 isFocused && webStyles.tabItemActive,
                 isSmallScreen && { paddingHorizontal: 12 }
               ]}
@@ -142,25 +144,25 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
 
         <View style={{ flexDirection: 'row', alignItems: 'center', position: 'relative' }}>
           <View style={{ position: 'relative' }}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={[
                 webStyles.iconBtn,
                 state.index === 4 && webStyles.iconBtnActive,
                 { marginRight: 8, backgroundColor: theme.surface, borderColor: theme.border },
                 isSmallScreen && { width: 32, height: 32 }
-              ]} 
+              ]}
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
               <Ionicons name={state.index === 4 ? "person" : "person-outline"} size={isSmallScreen ? 18 : 22} color={state.index === 4 ? theme.primary : theme.text} />
             </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => setMenuOpen(!menuOpen)} 
+            <TouchableOpacity
+              onPress={() => setMenuOpen(!menuOpen)}
               style={{ position: 'absolute', bottom: -2, right: -2, backgroundColor: theme.surface, borderRadius: 10, padding: 1, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 1 }}
             >
               <Ionicons name="chevron-down" size={14} color={theme.text} />
             </TouchableOpacity>
           </View>
-          
+
           {menuOpen && (
             <View style={{
               position: 'absolute',
@@ -209,7 +211,6 @@ const webStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    // Sombra sutil estilo Facebook
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -221,6 +222,10 @@ const webStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  logoImage: {
+    width: 120,
+    height: 50,
   },
   logoText: {
     fontSize: 22,
@@ -303,7 +308,6 @@ export default function TabLayout() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [, setLangTick] = useState(0);
 
-  // Re-render tabs when language changes on mobile
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(LANGUAGE_CHANGED_EVENT, () => {
       setLangTick(t => t + 1);
@@ -325,16 +329,14 @@ export default function TabLayout() {
             .select('id, tipo, mensaje')
             .eq('usuario_id', uid)
             .or('leido.eq.false,leido.is.null');
-          
+
           if (error) {
             console.error('Error fetching unread (layout):', error.message);
             return;
           }
 
           if (data) {
-            // Fetch unread messages count
             fetchUnreadMessages(uid);
-            // Filtrar notificaciones duplicadas de seguimiento generadas por trigger viejo
             const valid = data.filter(n => !(n.tipo === 'seguidor' && !n.mensaje?.includes('||')));
             setUnreadCount(valid.length);
           }
@@ -342,7 +344,7 @@ export default function TabLayout() {
           console.error('fetchUnread exception (layout):', err);
         }
       };
-      
+
       fetchUnread();
 
       channel = supabase
@@ -351,17 +353,15 @@ export default function TabLayout() {
           fetchUnread();
         })
         .subscribe();
-        
+
       const eventListener = DeviceEventEmitter.addListener('NOTIFICATIONS_READ', () => {
         fetchUnread();
       });
 
-      // Escuchar cuando se crea una notificación desde el sync de drafts
       const notifCreatedListener = DeviceEventEmitter.addListener(NOTIFICATION_UPDATED_EVENT, () => {
         fetchUnread();
       });
 
-      // Suscripción Realtime para mensajes
       const msgChannel = supabase
         .channel(`unread-msgs-layout-${uid}-${Date.now()}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'mensajes' }, () => {
@@ -369,7 +369,6 @@ export default function TabLayout() {
         })
         .subscribe();
 
-      // Polling cada 10s como fallback por si Realtime no conecta
       const pollInterval = setInterval(() => {
         fetchUnread();
         fetchUnreadMessages(uid);
@@ -383,7 +382,7 @@ export default function TabLayout() {
         clearInterval(pollInterval);
       };
     };
-    
+
     const cleanup = init();
 
     return () => {
@@ -391,7 +390,6 @@ export default function TabLayout() {
     };
   }, []);
 
-  /** Calcula la cantidad total de mensajes no leídos en todas las conversaciones */
   const fetchUnreadMessages = async (uid: string) => {
     try {
       const { data: messages, error } = await supabase
