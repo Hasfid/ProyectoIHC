@@ -18,7 +18,7 @@ import { StyleSheet, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
-// ── Geometría ────────────────────────────────────────────────────────────────
+
 
 import { GUAYANA_POLYGON as GF_POLYGON } from '../lib/geofence';
 
@@ -52,12 +52,12 @@ const MAP_CENTER_START: [number, number] = [5.0, -63.5];
 const FLY_TO_TARGET: [number, number] = [5.8, -61.3];
 
 /** Zoom de destino del flyTo de entrada */
-const FLY_TO_ZOOM = 16;
+const FLY_TO_ZOOM = 15;
 
 /** Duración de la animación flyTo en segundos */
 const FLY_TO_DURATION = 4;
 
-// ── Inyección de CSS ─────────────────────────────────────────────────────────
+
 
 const LEAFLET_CSS_ID = 'leaflet-css';
 
@@ -76,9 +76,11 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
       height: 100% !important;
       background: #000 !important;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      isolation: isolate;
     }
     .leaflet-tile-pane img { max-width: none !important; }
     .custom-pin-icon { background: none !important; border: none !important; }
+    .guayana-label-icon { background: none !important; border: none !important; pointer-events: none !important; }
 
     /* ── Controles: estilo HUD flotante ── */
     .leaflet-control-zoom {
@@ -87,6 +89,9 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
       overflow: hidden !important;
       box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
       backdrop-filter: blur(8px);
+      z-index: 1001 !important;
+      pointer-events: auto !important;
+      position: relative !important;
     }
     .leaflet-control-zoom a {
       background: rgba(0,0,0,0.5) !important;
@@ -114,7 +119,7 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
 
     .leaflet-bottom.leaflet-right {
       top: auto !important;
-      bottom: 6px !important;
+      bottom: 12px !important;
       right: 16px !important;
       left: auto !important;
       display: flex !important;
@@ -283,11 +288,34 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
     }
+    /* ── User location dot ── */
+    .ecos-user-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(52, 211, 153, 0.25);
+      border: 2px solid rgba(52, 211, 153, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .ecos-user-dot-inner {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #34d399;
+      box-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
+      animation: ecos-pulse 2s ease-in-out infinite;
+    }
+    @keyframes ecos-pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.3); opacity: 0.7; }
+    }
   `;
   document.head.appendChild(style);
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 /** Devuelve una etiqueta de categoría en mayúsculas */
 const getCategoryLabel = (item: any): string => {
@@ -333,15 +361,17 @@ const offsetOverlappingRecords = (records: any[]) => {
   });
 };
 
-// ── Componente ───────────────────────────────────────────────────────────────
+
 
 export default function MapWeb({
   onRegionChangeComplete,
   registrationLayout = false,
+  initialRegion,
 }: {
   onRegionChangeComplete?: (region: any) => void;
   /** En flujo crear registro (web): barra de búsqueda abajo, junto a la zona de confirmación */
   registrationLayout?: boolean;
+  initialRegion?: any;
 }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
@@ -350,12 +380,14 @@ export default function MapWeb({
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
 
-  // ── Search state ──
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
   const [flyTarget, setFlyTarget] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const geoWatchRef = React.useRef<number | null>(null);
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
@@ -462,6 +494,26 @@ export default function MapWeb({
     }).catch(err => console.error('Error loading Leaflet:', err));
 
     fetchRecords();
+
+    /* Ubicación en tiempo real del usuario (solo en memoria, no se almacena) */
+    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+      geoWatchRef.current = navigator.geolocation.watchPosition(
+        (pos) => {
+          setUserLocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+        },
+        (err) => console.warn('Geolocation error:', err),
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: 5000 }
+      );
+    }
+
+    return () => {
+      if (geoWatchRef.current != null) {
+        navigator.geolocation.clearWatch(geoWatchRef.current);
+      }
+    };
   }, []);
 
   /** Trae todos los registros con coordenadas válidas desde Supabase */
@@ -476,7 +528,7 @@ export default function MapWeb({
     }
   };
 
-  // ── Loading ────────────────────────────────────────────────────────────────
+
   if (!MapComponents || !cssReady) {
     return (
       <View style={styles.container}>
@@ -489,7 +541,7 @@ export default function MapWeb({
 
   const { MapContainer, TileLayer, Marker, Popup, Polygon, ZoomControl, useMap, useMapEvents, L } = MapComponents;
 
-  // ── Sub-componentes internos ───────────────────────────────────────────────
+
 
   /** Listener de movimiento para el callback externo */
   const MapEventsComponent = () => {
@@ -550,13 +602,13 @@ export default function MapWeb({
               0 0 20px rgba(52,211,153,0.2);
           ">
             ${imageUrl
-              ? `<img
+          ? `<img
                   src="${imageUrl}"
                   style="width:100%;height:100%;object-fit:cover;display:block;"
                   onerror="this.parentElement.style.background='#1a2e1a'"
                 />`
-              : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;">🌿</div>`
-            }
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;">🌿</div>`
+        }
           </div>
 
           <!-- Etiqueta glassmorphism -->
@@ -588,15 +640,16 @@ export default function MapWeb({
     });
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
     <View style={styles.container}>
 
       <MapContainer
         className={registrationLayout ? 'ecos-map-registration' : undefined}
-        center={MAP_CENTER_START}
-        zoom={MAP_ZOOM_START}
-        maxZoom={18}
+        center={initialRegion ? [initialRegion.latitude, initialRegion.longitude] : MAP_CENTER_START}
+        zoom={initialRegion ? Math.max(5, Math.min(15, Math.round(Math.log2(360 / initialRegion.latitudeDelta)))) : MAP_ZOOM_START}
+        maxZoom={15}
+        minZoom={3}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
         doubleClickZoom={true}
@@ -611,23 +664,23 @@ export default function MapWeb({
         {/* Listener de eventos */}
         <MapEventsComponent />
 
-        {/* ── Capa satelital similar a hybrid de la app ── */}
+        {/* Capa satelital similar a hybrid de la app */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           attribution="Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
-          maxNativeZoom={18}
-          maxZoom={18}
+          maxNativeZoom={15}
+          maxZoom={15}
         />
 
-        {/* ── Capas de etiquetas para caminos y nombres ── */}
+        {/* Capas de etiquetas para caminos y nombres */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
-          maxNativeZoom={18}
-          maxZoom={18}
+          maxNativeZoom={15}
+          maxZoom={15}
           pane="overlayPane"
         />
 
-        {/* ── Máscara: oscurece el exterior de la Guayana y mantiene el interior claro ── */}
+        {/* Máscara: oscurece el exterior de la Guayana y mantiene el interior claro */}
         <Polygon
           positions={[WORLD_BOUNDS, GUAYANA_POLYGON]}
           pathOptions={{
@@ -638,7 +691,7 @@ export default function MapWeb({
           }}
         />
 
-        {/* ── Contorno neón de la Guayana ── */}
+        {/* Contorno neón de la Guayana */}
         <Polygon
           positions={GUAYANA_POLYGON}
           pathOptions={{
@@ -651,7 +704,7 @@ export default function MapWeb({
           }}
         />
 
-        {/* ── Etiqueta flotante que desaparece al acercarse */}
+        {/* Etiqueta flotante que desaparece al acercarse */}
         {showGuayanaLabel && (
           <Marker
             position={GUAYANA_CENTER}
@@ -678,10 +731,13 @@ export default function MapWeb({
           />
         )}
 
-        {/* ── FlyTo desde busqueda ── */}
+        {/* FlyTo desde busqueda */}
         {flyTarget && <FlyToSearch target={flyTarget} useMap={useMap} onDone={() => setFlyTarget(null)} />}
 
-        {/* ── Marcadores de registros (datos de Supabase) ── */}
+        {/* Ubicación del usuario: círculo de 5km */}
+        {userLocation && <UserLocationLayer userLocation={userLocation} useMap={useMap} L={L} Marker={Marker} />}
+
+        {/* Marcadores de registros (datos de Supabase) */}
         {records.map((record: any) => {
           const lat = record._renderLat;
           const lng = record._renderLng;
@@ -696,7 +752,7 @@ export default function MapWeb({
               <Popup className="ecos-popup" maxWidth={260} minWidth={240}>
                 <div style={{ margin: 0, padding: 0 }}>
 
-                  {/* ── Imagen de cabecera ── */}
+                  {/* Imagen de cabecera */}
                   <div style={{ width: '100%', height: 145, overflow: 'hidden', position: 'relative' }}>
                     {record.media_url ? (
                       <img
@@ -726,7 +782,7 @@ export default function MapWeb({
                     </div>
                   </div>
 
-                  {/* ── Contenido HUD ── */}
+                  {/* Contenido HUD */}
                   <div style={{ padding: '14px 16px 16px' }}>
 
                     {/* Nombre */}
@@ -822,31 +878,25 @@ export default function MapWeb({
           pointerEvents: 'auto',
           ...(registrationLayout
             ? {
-                top: 76,
-                bottom: 'auto',
-                left: 16,
-                right: 'auto',
-                width: 'min(420px, calc(100% - 120px))',
-                maxWidth: 420,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'stretch',
-                margin: 0,
-              }
+              top: 76,
+              bottom: 'auto',
+              left: 16,
+              right: 'auto',
+              width: 'min(420px, calc(100% - 120px))',
+              maxWidth: 420,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              margin: 0,
+            }
             : {
-                top: 16,
-                left: 16,
-                right: 'auto',
-                maxWidth: 420,
-                width: 'min(420px, calc(100% - 32px))',
-              }),
-          '--search-background': 'rgba(5,10,8,0.85)',
-          '--search-border': 'rgba(52,211,153,0.3)',
-          '--search-text': '#ffffff',
-          '--search-placeholder': 'rgba(255,255,255,0.55)',
-          '--search-result-background': 'rgba(5,10,8,0.92)',
-          '--search-result-border': 'rgba(52,211,153,0.2)',
-        } as React.CSSProperties}
+              top: 16,
+              left: 16,
+              right: 'auto',
+              maxWidth: 420,
+              width: 'min(420px, calc(100% - 32px))',
+            }),
+        } as React.CSSProperties & Record<string, string>}
       >
         <div className="ecos-search-bar">
           <Ionicons name="search" size={18} color="#34d399" style={{ marginRight: 8 }} />
@@ -904,6 +954,53 @@ function FlyToSearch({ target, useMap, onDone }: { target: { lat: number; lng: n
   return null;
 }
 
+/** Sub-componente: círculo de 1.5km + punto pulsante en la ubicación del usuario */
+function UserLocationLayer({ userLocation, useMap, L, Marker }: { userLocation: { lat: number; lng: number }; useMap: any; L: any; Marker: any }) {
+  const map = useMap();
+  const circleRef = React.useRef<any>(null);
+
+  useEffect(() => {
+    if (!map || !userLocation) return;
+
+    if (circleRef.current) {
+      circleRef.current.setLatLng([userLocation.lat, userLocation.lng]);
+    } else {
+      circleRef.current = L.circle([userLocation.lat, userLocation.lng], {
+        radius: 1500,
+        fillColor: 'rgba(52, 211, 153, 0.10)',
+        fillOpacity: 0.1,
+        color: 'rgba(52, 211, 153, 0.45)',
+        weight: 2,
+      }).addTo(map);
+    }
+  }, [map, userLocation, L]);
+
+  // Cleanup al desmontar
+  useEffect(() => {
+    return () => {
+      if (circleRef.current && map) {
+        map.removeLayer(circleRef.current);
+        circleRef.current = null;
+      }
+    };
+  }, [map]);
+
+  const userIcon = L.divIcon({
+    className: 'custom-pin-icon',
+    html: `<div class="ecos-user-dot"><div class="ecos-user-dot-inner"></div></div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
+  });
+
+  return (
+    <Marker
+      position={[userLocation.lat, userLocation.lng]}
+      icon={userIcon}
+      interactive={false}
+    />
+  );
+}
+
 // ── Estilos inline reutilizables (popup JSX web) ─────────────────────────────
 
 const metaBadgeStyle: React.CSSProperties = {
@@ -935,6 +1032,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#000',
+    zIndex: 0,
   },
   loadingOverlay: {
     flex: 1,

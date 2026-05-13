@@ -14,9 +14,9 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
+import { i18n } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
-import { i18n } from '../../lib/i18n';
 
 export default function DiscoverScreen() {
   const router = useRouter();
@@ -90,11 +90,18 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}> 
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
 
       <Map />
 
       <WeatherWidget />
+
+      {/* Botón de ayuda - Web: esquina superior derecha */}
+      {Platform.OS === 'web' && (
+        <TouchableOpacity style={[styles.helpButtonWeb, { backgroundColor: theme.overlay }]} onPress={() => router.push('/help')}>
+          <Ionicons name="help-circle" size={24} color={theme.primary} />
+        </TouchableOpacity>
+      )}
 
       {/* Web: Botón de carga de registro integrado en el mapa */}
       {Platform.OS === 'web' && (
@@ -137,8 +144,14 @@ export default function DiscoverScreen() {
 
       {Platform.OS !== 'web' && (
         <View style={styles.floatingButtonContainer}>
+          {/* Botón de ayuda arriba del chat */}
+          <TouchableOpacity style={styles.helpButton} onPress={() => router.push('/help')}>
+            <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}>
+              <Ionicons name="help-circle" size={28} color={theme.primary} />
+            </BlurView>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
-            <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}> 
+            <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}>
               <Ionicons name="chatbubbles" size={28} color={theme.primary} style={styles.icon} />
             </BlurView>
           </TouchableOpacity>
@@ -172,13 +185,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 40,
     right: 24,
-    borderRadius: 30,
-    overflow: 'visible',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 8,
+    alignItems: 'center',
   },
   floatingButton: {
     width: 60,
@@ -213,6 +220,29 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
+  },
+  helpButtonWeb: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1000,
+  },
+  helpButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    overflow: 'hidden',
+    marginBottom: 12,
   },
   // Scanner web styles
   scannerButtonContainer: {

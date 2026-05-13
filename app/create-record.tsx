@@ -49,7 +49,7 @@ export default function CreateRecordScreen() {
   const fromScanner = !!params.nombreTradicional;
   const iaCerteza = params.iaCerteza ? parseFloat(params.iaCerteza) : undefined;
 
-  // ── Estado ────────────────────────────────────────────────────────────────
+
   const [step, setStep] = useState<Step>(params.mediaUrl ? 'map' : 'media');
   const [mediaUri, setMediaUri] = useState(params.mediaUrl ?? '');
   const [tipoMedia, setTipoMedia] = useState(params.tipoMedia ?? 'imagen');
@@ -59,7 +59,7 @@ export default function CreateRecordScreen() {
   const [locLoading, setLocLoading] = useState(false);
   const [description, setDescription] = useState('');
 
-  // ── Paso 1: Seleccionar media ─────────────────────────────────────────────
+
   const pickMedia = async (nextStep: Step = 'map') => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
@@ -78,7 +78,7 @@ export default function CreateRecordScreen() {
     }
   };
 
-  // ── Paso 2: Abrir mapa ────────────────────────────────────────────────────
+
   const goToMap = async () => {
     setLocLoading(true);
     try {
@@ -95,7 +95,7 @@ export default function CreateRecordScreen() {
     }
   };
 
-  // ── Paso 3: Confirmar ubicación → guardar ─────────────────────────────────
+
   const confirmAndSave = async () => {
     const loc = coords ?? { lat: 5.0, lng: -63.5 };
 
@@ -131,7 +131,7 @@ export default function CreateRecordScreen() {
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
+
 
   // PASO 1: Selección de media
   if (step === 'media') {
@@ -217,6 +217,7 @@ export default function CreateRecordScreen() {
         <View style={{ flex: 1 }}>
           <Map
             registrationLayout={isWeb}
+            initialRegion={coords ? { latitude: coords.lat, longitude: coords.lng, latitudeDelta: 0.045, longitudeDelta: 0.045 } : undefined}
             onRegionChangeComplete={(region: any) => {
               if (region?.latitude && region?.longitude) {
                 setCoords({ lat: region.latitude, lng: region.longitude });
@@ -341,7 +342,7 @@ export default function CreateRecordScreen() {
   return null;
 }
 
-// ── Estilos ──────────────────────────────────────────────────────────────────
+
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8faf9' },

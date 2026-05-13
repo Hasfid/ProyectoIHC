@@ -13,15 +13,16 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import MapView, { Marker, Polygon } from 'react-native-maps';
+import MapView, { Circle, Marker, Polygon } from 'react-native-maps';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
-// ── Geometría ────────────────────────────────────────────────────────────────
+
 
 import { GUAYANA_POLYGON } from '../lib/geofence';
 
@@ -51,7 +52,7 @@ const INITIAL_REGION = {
   longitudeDelta: 40,
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+
 
 const getCategoryInfo = (item: any) => {
   const n = (item.nombre_tradicional || '').toLowerCase();
@@ -99,26 +100,31 @@ const offsetOverlappingRecords = (records: any[]) => {
   });
 };
 
-// ── Componente ───────────────────────────────────────────────────────────────
+
 
 export default function Map({
   onRegionChangeComplete,
   registrationLayout: _registrationLayout,
   initialRegion,
+  onHelpPress: _onHelpPress,
 }: {
   onRegionChangeComplete?: (region: any) => void;
   /** Solo aplica en `Map.web`; en nativo se ignora */
   registrationLayout?: boolean;
   initialRegion?: any;
+  /** Solo aplica en `Map.web`; en nativo se ignora */
+  onHelpPress?: () => void;
 }) {
   const [records, setRecords] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
   const [currentRegion, setCurrentRegion] = useState(INITIAL_REGION);
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const mapRef = useRef<MapView>(null);
+  const locationSubRef = useRef<Location.LocationSubscription | null>(null);
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
 
-  // ── Search state ──
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
@@ -207,6 +213,40 @@ export default function Map({
     Keyboard.dismiss();
   };
 
+  /* Ubicación en tiempo real del usuario (solo en memoria, no se almacena) */
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted' || !isMounted) return;
+
+        locationSubRef.current = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 5000,
+            distanceInterval: 10,
+          },
+          (loc) => {
+            if (isMounted) {
+              setUserLocation({
+                latitude: loc.coords.latitude,
+                longitude: loc.coords.longitude,
+              });
+            }
+          }
+        );
+      } catch (err) {
+        console.warn('Location permission error:', err);
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+      locationSubRef.current?.remove();
+    };
+  }, []);
+
   useEffect(() => {
     // Cargar registros de Supabase
     (async () => {
@@ -268,7 +308,7 @@ export default function Map({
         }}
         onPress={closeCard}
       >
-        {/* ── Máscara: oscurece el exterior de la Guayana y mantiene el interior claro ── */}
+        {/* Máscara: oscurece el exterior de la Guayana y mantiene el interior claro */}
         <Polygon
           coordinates={WORLD_REGION}
           holes={[GUAYANA_REGION]}
@@ -276,16 +316,16 @@ export default function Map({
           strokeColor="rgba(0, 0, 0, 0)"
         />
 
-        {/* ── Etiqueta flotante que solo se muestra desde una vista elevada */}
+        {/* Etiqueta flotante que solo se muestra desde una vista elevada */}
         {currentRegion.latitudeDelta >= 3.0 && (
           <Marker coordinate={GUAYANA_LABEL_POSITION} tracksViewChanges={false} tappable={false} anchor={{ x: 0.5, y: 0.5 }}>
             <View style={s.guayanaLabel} pointerEvents="none">
-              <Text style={s.guayanaLabelText}>Región Guayana</Text>
+              <Text style={s.guayanaLabelText}>REGIÓN GUAYANA</Text>
             </View>
           </Marker>
         )}
 
-        {/* ── Contorno neón esmeralda de la Guayana ── */}
+        {/* Contorno neón esmeralda de la Guayana */}
         <Polygon
           coordinates={GUAYANA_REGION}
           fillColor="transparent"
@@ -294,7 +334,7 @@ export default function Map({
           lineDashPattern={[6, 4]}
         />
 
-        {/* ── Marcadores circulares con imagen ── */}
+        {/* Marcadores circulares con imagen */}
         {records.map((record) => {
           const lat = record._renderLat;
           const lng = record._renderLng;
@@ -326,9 +366,32 @@ export default function Map({
             </Marker>
           );
         })}
+
+        {/* Ubicación del usuario: círculo de 5km */}
+        {userLocation && (
+          <>
+            <Circle
+              center={userLocation}
+              radius={1500}
+              fillColor="rgba(52, 211, 153, 0.10)"
+              strokeColor="rgba(52, 211, 153, 0.45)"
+              strokeWidth={2}
+            />
+            <Marker
+              coordinate={userLocation}
+              anchor={{ x: 0.5, y: 0.5 }}
+              tracksViewChanges={false}
+              tappable={false}
+            >
+              <View style={s.userDot}>
+                <View style={s.userDotInner} />
+              </View>
+            </Marker>
+          </>
+        )}
       </MapView>
 
-      {/* ── Barra de búsqueda de ubicación ── */}
+      {/* Barra de búsqueda de ubicación */}
       <View style={s.searchContainer}>
         <View style={[s.searchBar, { backgroundColor: isDark ? 'rgba(22,35,51,0.92)' : 'rgba(255,255,255,0.92)', borderColor: isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.1)' }]}>
           <Ionicons name="search" size={18} color={isDark ? '#34d399' : theme.muted} />
@@ -366,7 +429,7 @@ export default function Map({
         )}
       </View>
 
-      {/* ── Tarjeta flotante glassmorphism HUD ── */}
+      {/* Tarjeta flotante glassmorphism HUD */}
       {selected && (
         <View style={s.cardWrapper} pointerEvents="box-none">
           <View style={s.card}>
@@ -440,12 +503,12 @@ export default function Map({
   );
 }
 
-// ── Estilos ──────────────────────────────────────────────────────────────────
+
 
 const CARD_W = Math.min(SCREEN_W - 40, 320);
 
 const s = StyleSheet.create({
-  // ── Search bar ──
+
   searchContainer: {
     position: 'absolute',
     top: Platform.OS === 'ios' ? 86 : 62,
@@ -507,7 +570,7 @@ const s = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // ── Marcador circular con imagen ──
+
   pin: {
     alignItems: 'center',
     width: 64,
@@ -561,7 +624,7 @@ const s = StyleSheet.create({
     height: '100%',
   },
 
-  // ── Tarjeta flotante HUD ──
+
   cardWrapper: {
     position: 'absolute',
     bottom: 100,
@@ -604,27 +667,29 @@ const s = StyleSheet.create({
     alignItems: 'center',
   },
   guayanaLabel: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 18,
-    backgroundColor: 'rgba(8, 14, 20, 0.95)',
-    borderWidth: 1,
-    borderColor: 'rgba(52, 211, 153, 0.35)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 18,
-    elevation: 8,
   },
   guayanaLabelText: {
-    color: '#fff',
-    fontSize: 13,
+    color: 'rgba(255,255,255,0.95)',
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textAlign: 'center',
+    textTransform: 'uppercase',
     transform: [{ rotate: '-10deg' }],
+    ...Platform.select({
+      ios: {
+        textShadowColor: 'rgba(0,0,0,0.6)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 12,
+      },
+      android: {
+        textShadowColor: 'rgba(0,0,0,0.8)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 8,
+      },
+    }),
   },
   cardTitle: {
     color: '#fff',
@@ -713,5 +778,33 @@ const s = StyleSheet.create({
   cardTagText: {
     fontSize: 10,
     fontWeight: 'bold',
+  },
+
+  userDot: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(52, 211, 153, 0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(52, 211, 153, 0.6)',
+  },
+  userDotInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#34d399',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#34d399',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
 });

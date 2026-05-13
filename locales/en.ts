@@ -1,3 +1,8 @@
+/**
+ * locales/en.ts — English translations.
+ * 
+ * Contains all UI text in English.
+ */
 export const en = {
   profile: {
     title: "Profile",
@@ -213,5 +218,23 @@ export const en = {
     commentsOnPost: "comments on",
     someone: "Someone",
     yourPost: "your post",
+  },
+  help: {
+    title: "Support",
+    whatIsEcos: "What is ECOS?",
+    whatIsEcosDesc: "ECOS is a mobile app and website designed so that anyone can explore, record, and help protect the nature of the Venezuelan Guayana. It works as a large community where locals, tourists, and experts share photos and data of the plants and animals they find, creating together a great archive to protect this valuable region.",
+    screens: "Screens",
+    discoverTitle: "Discover",
+    discoverDesc: "This is the main screen for exploring. It shows an interactive map of the Guayana with markers for animals and plants that others have found. To help you on your walks, it includes a small panel with weather and forecasts, plus a chat so you can talk and organize with other explorers.",
+    scannerTitle: "Scanner",
+    scannerDesc: "This is your tool to identify what you see. Using your phone's camera, the app helps you recognize what animal or plant is in front of you and saves the exact spot where you found it. If you're in an area without internet, no worries — you can take the photo and upload it later from your gallery.",
+    observatoryTitle: "Observatory",
+    observatoryDesc: "This is a direct window into nature. Here you can watch live video streams from hidden cameras at key ecosystem locations. It also has a social media-style wall where the community can write posts, share their adventures, and talk about environmental care.",
+    recordsTitle: "Records",
+    recordsDesc: "This is the app's public album. In this section you can see an updated list of all photos, discoveries, and identifications shared by all ECOS users, creating a living catalog of what exists in our region.",
+    profileTitle: "Profile",
+    profileDesc: "This is your personal space within the platform. Here you can see who you follow and who follows you, plus have at hand the history of all the species you've discovered and messages you've posted in the community.",
+    mission: "What does ECOS aim to achieve?",
+    missionDesc: "Above all, the main goal is to connect people with nature through knowledge. The platform is based on a fundamental idea: when someone truly understands what they are seeing, they value and care for it much more. From that connection and making this information accessible, ECOS seeks to show the world the incredible richness of the Venezuelan Guayana, giving anyone an easy-to-use tool so we can all help monitor, document, and conserve our environment.",
   },
 };
