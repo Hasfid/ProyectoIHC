@@ -189,7 +189,7 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
     
     return true;
   } catch (err: any) {
-    console.error(`AI identification failed for "${draft.id}":`, err);
+    console.warn(`AI identification failed for "${draft.id}":`, err.message || err);
 
     const errorMsg = err?.message || '';
 

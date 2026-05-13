@@ -21,7 +21,7 @@ const SUPABASE_URL =
 const SUPABASE_ANON_KEY =
   env.SUPABASE_ANON_KEY ??
   Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ??
-  'sb_publishable_4PaDR181sXCuPsLMD3ayUw_Hc6VoJ2c';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5Z2Rhd3dxanBiZW16b25ldnFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg2Mjc2NzksImV4cCI6MjA5NDIwMzY3OX0.S5gOJc8OQ05M8hOhLwexjMp74rTeemvWwBHYDMIn9b4';
 
 // ── Adaptador SSR-safe ───────────────────────────────────────────────────────
 

@@ -14,8 +14,11 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useOfflineSync } from "../lib/useOfflineSync";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, LogBox } from "react-native";
 import { initI18n } from '../lib/i18n';
+
+// Ocultar logs y errores visuales que manchan la estética (RedBox/YellowBox)
+LogBox.ignoreAllLogs();
 
 export default function RootLayout() {
   const router = useRouter();

@@ -1055,7 +1055,7 @@ export default function ProfileScreen() {
                         <Text style={[styles.draftDate, { color: theme.subtext }] }>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
-                        {draft.status === 'rejected' && draft.last_error ? (
+                        {(draft.status === 'rejected' || (draft.status === 'pending_ai' && draft.last_error)) && draft.last_error ? (
                           <Text style={{ fontSize: 11, color: theme.error, marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
                             {draft.last_error}
                           </Text>
@@ -1476,7 +1476,7 @@ export default function ProfileScreen() {
                 <Text style={{ color: previewDraft?.status === 'rejected' ? '#ef9a9a' : '#a5d6a7', fontSize: 12, marginTop: 4, fontWeight: '600' }}>
                   {previewDraft?.status === 'rejected' ? i18n.t('common.rejected') : previewDraft?.status === 'pending_ai' ? i18n.t('common.connectingAI') : previewDraft?.status === 'pending_selection' ? i18n.t('common.pendingConfirm') : i18n.t('common.pendingUpload')}
                 </Text>
-                {previewDraft?.status === 'rejected' && previewDraft?.last_error ? (
+                {(previewDraft?.status === 'rejected' || (previewDraft?.status === 'pending_ai' && previewDraft?.last_error)) && previewDraft?.last_error ? (
                   <Text style={{ color: '#ef9a9a', fontSize: 11, marginTop: 4 }} numberOfLines={2}>{previewDraft.last_error}</Text>
                 ) : null}
                 {previewDraft?.status === 'rejected' ? (

@@ -59,7 +59,6 @@ export const en = {
     pendingUpload: "Pending upload",
     close: "Tap to close",
     confirm: "Confirm",
-    cancel: "Cancel",
   },
   drafts: {
     noSpeciesDetected: "No species detected",
