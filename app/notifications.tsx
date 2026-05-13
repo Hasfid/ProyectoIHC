@@ -27,7 +27,7 @@ type Notificacion = {
   id: string;
   titulo: string;
   mensaje: string;
-  tipo: 'seguidor' | 'sincronizacion' | 'sistema' | 'competencia';
+  tipo: 'seguidor' | 'sincronizacion' | 'sistema';
   leido: boolean;
   created_at: string;
 };
@@ -152,7 +152,7 @@ export default function NotificationsScreen() {
     switch (tipo) {
       case 'seguidor': return 'people';
       case 'sincronizacion': return 'cloud-done';
-      case 'competencia': return 'trophy';
+      case 'sistema': return 'information-circle';
       default: return 'notifications';
     }
   };
@@ -162,7 +162,7 @@ export default function NotificationsScreen() {
     switch (tipo) {
       case 'seguidor': return '#2196F3';
       case 'sincronizacion': return '#4CAF50';
-      case 'competencia': return '#FFC107';
+      case 'sistema': return '#2196F3';
       default: return '#757575';
     }
   };

@@ -1,7 +1,9 @@
 const { createClient } = require('@supabase/supabase-js');
 
-const SUPABASE_URL = 'https://lurpzudnafegijlteoym.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_xrr8bYspSYSFmkH2V3IG3A_NJ4QAF7y';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://lurpzudnafegijlteoym.supabase.co';
+const SUPABASE_ANON_KEY =
+  process.env.SUPABASE_ANON_KEY ||
+  'sb_publishable_xrr8bYspSYSFmkH2V3IG3A_NJ4QAF7y';
 
 async function checkPublicaciones() {
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);

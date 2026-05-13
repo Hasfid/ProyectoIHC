@@ -709,13 +709,15 @@ export default function ProfileScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.headerContainer}>
-          {hasPhoto ? (
-            <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
-          ) : (
-            <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
-              <Ionicons name="person" size={50} color="#ccc" />
-            </View>
-          )}
+          <TouchableOpacity onPress={openEditModal} activeOpacity={0.8}>
+            {hasPhoto ? (
+              <Image source={{ uri: profile.foto_perfil }} style={styles.profileImage} />
+            ) : (
+              <View style={[styles.profileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}>
+                <Ionicons name="person" size={50} color="#ccc" />
+              </View>
+            )}
+          </TouchableOpacity>
           
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
@@ -897,6 +899,11 @@ export default function ProfileScreen() {
                         <Text style={styles.draftDate}>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
+                        {draft.status === 'rejected' && draft.last_error ? (
+                          <Text style={{ fontSize: 11, color: '#d32f2f', marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
+                            {draft.last_error}
+                          </Text>
+                        ) : null}
                       </View>
                       <View style={styles.draftActions}>
                         {draft.status === 'pending_selection' ? (

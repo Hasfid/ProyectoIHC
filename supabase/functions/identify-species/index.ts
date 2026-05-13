@@ -86,9 +86,7 @@ Estructura del JSON obligatorio:
           ],
         },
       ],
-      generationConfig: {
-        response_mime_type: "application/json"
-      }
+
     };
 
     const response = await fetch(endpoint, {

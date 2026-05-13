@@ -3,7 +3,6 @@
  * Pantalla de comunidad que integra:
  * - Streaming en vivo (Video MP4/HLS).
  * - Feed de publicaciones globales de usuarios.
- * - Sistema de retos (Challenges).
  * - Interacciones de seguimiento (Follow/Unfollow) integradas en el feed.
  */
 
@@ -26,12 +25,11 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { supabase } from '../../lib/supabase';
 import { followUser, unfollowUser, getFollowingIds } from '../../lib/follows';
-import Challenges from '../../components/Challenges';
-import { Modal } from 'react-native';
+
 
 // ─── CONFIGURACIÓN DE VIDEO / STREAM ────────────────────────────────
 // VIDEO ACTUAL: URL directa a MP4 en Supabase Storage
-const LIVE_VIDEO_URL = 'https://lurpzudnafegijlteoym.supabase.co/storage/v1/object/sign/Video/RegionGuayana.mp4?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV80ZDM1YTNjZC1hYjVmLTQyMGYtYWUxNS01MmFhYzI3MWFjMjUiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJWaWRlby9SZWdpb25HdWF5YW5hLm1wNCIsImlhdCI6MTc3ODAzODg3MywiZXhwIjoxODA5NTc0ODczfQ.MC2K_4VJk6P_SxeS46EpeCFfV5fNq6q6H9cwzEzXSKY';
+const LIVE_VIDEO_URL = 'https://aygdawwqjpbemzonevqg.supabase.co/storage/v1/object/public/Video/RegionGuayana%20(2).mp4';
 //
 // PARA STREAM EN VIVO (expansión futura):
 // 1. Reemplazá LIVE_VIDEO_URL con la URL HLS del stream:
@@ -65,7 +63,7 @@ export default function ObservatoryScreen() {
   const [newPostDesc, setNewPostDesc] = useState('');
   const [publishing, setPublishing] = useState(false);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
-  const [showChallenges, setShowChallenges] = useState(false);
+
 
   console.log('Observatory Screen Render - Posts:', posts.length);
 
@@ -261,22 +259,7 @@ export default function ObservatoryScreen() {
     <View style={styles.container}>
       <View style={styles.customHeader}>
         <Text style={styles.customHeaderTitle}>Observatorio</Text>
-        <TouchableOpacity 
-          style={styles.roundChallengeBtn} 
-          onPress={() => setShowChallenges(true)}
-        >
-          <Ionicons name="trophy" size={24} color="#a4ff44" />
-        </TouchableOpacity>
       </View>
-
-      <Modal
-        visible={showChallenges}
-        animationType="slide"
-        onRequestClose={() => setShowChallenges(false)}
-      >
-        <Challenges onClose={() => setShowChallenges(false)} />
-      </Modal>
-
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -287,6 +270,7 @@ export default function ObservatoryScreen() {
         {/* Transmisión en Vivo */}
         <Text style={styles.sectionTitle}>Transmisión en Vivo</Text>
         <View style={styles.liveCameraFrame}>
+          {/* Video desactivado temporalmente
           {Platform.OS === 'web' ? (
             <video
               src={LIVE_VIDEO_URL}
@@ -312,11 +296,21 @@ export default function ObservatoryScreen() {
               isLooping
             />
           )}
-          <View style={styles.liveBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.liveText}>EN VIVO</Text>
+          */}
+          
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <Ionicons name="videocam-off-outline" size={48} color="#6d4c41" />
+            <Text style={{ color: '#8d6e63', marginTop: 8, fontSize: 14, fontWeight: '600' }}>
+              Transmisión pausada temporalmente
+            </Text>
+          </View>
+
+          <View style={[styles.liveBadge, { backgroundColor: 'rgba(0,0,0,0.4)' }]}>
+            <View style={[styles.liveDot, { backgroundColor: '#999' }]} />
+            <Text style={styles.liveText}>OFFLINE</Text>
           </View>
         </View>
+
 
         {/* Sección de Comunidad */}
         <View style={styles.sectionHeaderRow}>
@@ -468,23 +462,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#111',
   },
-  roundChallengeBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: 'rgba(5, 19, 16, 0.85)', // Fondo más oscuro
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: 'rgba(164, 255, 68, 0.4)', // Borde un poco más definido
-    marginLeft: 'auto',
-    // Sombra para dar profundidad
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
+
   scrollContent: {
     paddingTop: 100,
     paddingHorizontal: 20,

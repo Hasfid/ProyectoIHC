@@ -193,11 +193,11 @@ const identifyDraft = async (draft: DraftRecord): Promise<boolean> => {
     const errorMsg = err?.message || '';
 
     if (errorMsg.includes('nativa, endémica o invasora')) {
-      // Failed geographical filter — keep as pending so user sees it
+      // Failed geographical filter — reject immediately
       await updateDraft(draft.id, {
-        status: 'pending_selection',
+        status: 'rejected',
         nombre_tradicional: 'Especie no válida',
-        last_error: 'La especie detectada no habita en Venezuela. Eliminá este borrador o intentá con otra foto.',
+        last_error: 'La especie detectada no habita en Venezuela.',
         metadatos_especie: { rejected_reason: 'geo_filter', all_candidates: [] },
       });
       return true;

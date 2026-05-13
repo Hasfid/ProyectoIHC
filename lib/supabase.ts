@@ -10,10 +10,18 @@
 
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const SUPABASE_URL = 'https://lurpzudnafegijlteoym.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_xrr8bYspSYSFmkH2V3IG3A_NJ4QAF7y';
+const env: any = typeof process !== 'undefined' ? process.env : {};
+const SUPABASE_URL =
+  env.SUPABASE_URL ??
+  Constants.expoConfig?.extra?.SUPABASE_URL ??
+  'https://aygdawwqjpbemzonevqg.supabase.co';
+const SUPABASE_ANON_KEY =
+  env.SUPABASE_ANON_KEY ??
+  Constants.expoConfig?.extra?.SUPABASE_ANON_KEY ??
+  'sb_publishable_4PaDR181sXCuPsLMD3ayUw_Hc6VoJ2c';
 
 // ── Adaptador SSR-safe ───────────────────────────────────────────────────────
 
