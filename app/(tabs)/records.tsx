@@ -259,32 +259,31 @@ export default function RecordsScreen() {
       <TouchableOpacity 
         onPress={() => {
           setSelectedRecord(item);
-          setActiveSighting(item); // Por defecto el primero
+          setActiveSighting(item);
           setExpandedDesc(false);
         }}
         onLongPress={() => setPreviewImage(item.media_url)}
         delayLongPress={300}
-        style={styles.cardContainer}
+        style={[styles.cardContainer, { borderColor: theme.border, backgroundColor: theme.card }]}
       >
-        <BlurView intensity={40} tint="dark" style={styles.cardBlur}>
-          <Image source={{ uri: item.media_url }} style={styles.cardImage} />
+        <View style={styles.cardBlur}>
+          <Image source={{ uri: item.media_url }} style={[styles.cardImage, { backgroundColor: theme.surface }]} />
           <View style={styles.cardContent}>
             <View style={styles.speciesHeader}>
-              <Text style={styles.cardTitle} numberOfLines={1}>{item.nombre_tradicional}</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countText}>{item.count} avistamientos</Text>
+              <Text style={[styles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.nombre_tradicional}</Text>
+              <View style={[styles.countBadge, { backgroundColor: theme.primarySoft }]}>
+                <Text style={[styles.countText, { color: theme.primary }]}>{item.count} avistamientos</Text>
               </View>
             </View>
             
             {item.nombre_cientifico ? (
-              <Text style={styles.cardScientific} numberOfLines={1}>{item.nombre_cientifico}</Text>
+              <Text style={[styles.cardScientific, { color: theme.subtext }]} numberOfLines={1}>{item.nombre_cientifico}</Text>
             ) : null}
 
             <View style={styles.cardFooter}>
-              {/* Pie de tarjeta simplificado sin etiquetas de estado */}
             </View>
           </View>
-        </BlurView>
+        </View>
       </TouchableOpacity>
     );
   };
@@ -345,45 +344,34 @@ export default function RecordsScreen() {
         transparent={true}
         onRequestClose={() => { setSelectedRecord(null); setExpandedDesc(false); }}
       >
-        <BlurView intensity={90} tint="dark" style={styles.modalOverlay}>
+        <BlurView intensity={theme.mode === 'dark' ? 90 : 40} tint={theme.mode === 'dark' ? "dark" : "light"} style={styles.modalOverlay}>
           {selectedRecord && (
-            <View style={styles.folderModal}>
+            <View style={[styles.folderModal, { backgroundColor: theme.background, borderColor: theme.border }]}>
               {/* Botón de retroceso en esquina superior izquierda */}
               <TouchableOpacity 
-                style={styles.backButton} 
+                style={[styles.backButton, { backgroundColor: theme.surface, borderColor: theme.border }]} 
                 onPress={() => setSelectedRecord(null)}
               >
-                <Ionicons name="arrow-back" size={24} color="#a4ff44" />
+                <Ionicons name="arrow-back" size={24} color={theme.text} />
               </TouchableOpacity>
-
-              {/* Pestaña de Carpeta */}
-              <View style={styles.folderTab}>
-                <Ionicons name="folder-open" size={20} color="#a4ff44" />
-                <Text style={styles.folderTabText}>EXPEDIENTE CIENTÍFICO</Text>
-                <TouchableOpacity 
-                  style={styles.closeFolderBtn} 
-                  onPress={() => setSelectedRecord(null)}
-                >
-                  <Ionicons name="close" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
 
               <ScrollView showsVerticalScrollIndicator={false} bounces={false} style={styles.folderContent}>
                 <TouchableOpacity 
                   activeOpacity={0.9}
                   onPress={() => setPreviewImage(activeSighting?.media_url || selectedRecord.media_url)}
-                  style={styles.modalImageContainer}
+                  style={[styles.modalImageContainer, { backgroundColor: theme.mode === 'dark' ? '#000' : '#f0f0f0' }]}
                 >
                   <Image 
                     source={{ uri: activeSighting?.media_url || selectedRecord.media_url }} 
                     style={styles.modalImage} 
+                    resizeMode="contain"
                   />
                   
                   <View style={styles.modalHeaderInfo}>
-                    <BlurView intensity={60} tint="dark" style={styles.modalHeaderBlur}>
-                      <Text style={styles.modalTitle}>{selectedRecord.nombre_tradicional}</Text>
+                    <BlurView intensity={theme.mode === 'dark' ? 60 : 80} tint={theme.mode === 'dark' ? "dark" : "light"} style={styles.modalHeaderBlur}>
+                      <Text style={[styles.modalTitle, { color: theme.text }]}>{selectedRecord.nombre_tradicional}</Text>
                       {selectedRecord.nombre_cientifico && (
-                         <Text style={styles.modalScientific}>{selectedRecord.nombre_cientifico}</Text>
+                         <Text style={[styles.modalScientific, { color: theme.subtext }]}>{selectedRecord.nombre_cientifico}</Text>
                       )}
                     </BlurView>
 
@@ -392,7 +380,7 @@ export default function RecordsScreen() {
                         style={styles.deleteBtn} 
                         onPress={() => handleDeleteRecord(activeSighting.id)}
                       >
-                        <Ionicons name="trash-outline" size={20} color="#ff5252" />
+                        <Ionicons name="trash-outline" size={20} color={theme.error} />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -401,59 +389,59 @@ export default function RecordsScreen() {
                 <View style={styles.modalBody}>
                   {/* Stats Base */}
                   <View style={styles.statsRow}>
-                    <View style={styles.statBox}>
-                      <Ionicons name="warning-outline" size={18} color="#a4ff44" />
-                      <Text style={styles.statLabel}>Peligrosidad</Text>
-                      <Text style={styles.statValue}>{selectedRecord.peligrosidad || 'N/A'}</Text>
+                    <View style={[styles.statBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <Ionicons name="warning-outline" size={18} color={theme.primary} />
+                      <Text style={[styles.statLabel, { color: theme.muted }]}>Peligrosidad</Text>
+                      <Text style={[styles.statValue, { color: theme.text }]}>{selectedRecord.peligrosidad || 'N/A'}</Text>
                     </View>
-                    <View style={styles.statBox}>
-                      <Ionicons name="earth-outline" size={18} color="#a4ff44" />
-                      <Text style={styles.statLabel}>Endemismo</Text>
-                      <Text style={styles.statValue}>{selectedRecord.alimentacion || 'No'}</Text>
+                    <View style={[styles.statBox, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                      <Ionicons name="earth-outline" size={18} color={theme.primary} />
+                      <Text style={[styles.statLabel, { color: theme.muted }]}>Endemismo</Text>
+                      <Text style={[styles.statValue, { color: theme.text }]}>{selectedRecord.alimentacion || 'No'}</Text>
                     </View>
                   </View>
 
                   {/* Datos Enriquecidos IA */}
                   {loadingEnrichedData ? (
                     <View style={styles.cultureSection}>
-                      <ActivityIndicator color="#a4ff44" style={{ marginVertical: 40 }} />
+                      <ActivityIndicator color={theme.primary} style={{ marginVertical: 40 }} />
                     </View>
                   ) : enrichedData ? (
                     <View style={styles.cultureSection}>
-                        <View style={styles.cultureCard}>
+                        <View style={[styles.cultureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                           <View style={styles.cultureHeader}>
-                            <Ionicons name="leaf-outline" size={20} color="#00e676" />
-                            <Text style={styles.cultureTitle}>Descripción Biológica</Text>
+                            <Ionicons name="leaf-outline" size={20} color={theme.primary} />
+                            <Text style={[styles.cultureTitle, { color: theme.text }]}>Descripción Biológica</Text>
                           </View>
-                          <Text style={styles.cultureText}>{enrichedData.descripcion_biologica}</Text>
+                          <Text style={[styles.cultureText, { color: theme.subtext }]}>{enrichedData.descripcion_biologica}</Text>
                         </View>
 
-                        <View style={styles.cultureCard}>
+                        <View style={[styles.cultureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                           <View style={styles.cultureHeader}>
-                            <Ionicons name="search-outline" size={20} color="#a4ff44" />
-                            <Text style={styles.cultureTitle}>Curiosidades</Text>
+                            <Ionicons name="search-outline" size={20} color={theme.primary} />
+                            <Text style={[styles.cultureTitle, { color: theme.text }]}>Curiosidades</Text>
                           </View>
                           {enrichedData.curiosidades.map((c: string, i: number) => (
                             <View key={i} style={styles.bulletRow}>
-                              <View style={styles.bulletDot} />
-                              <Text style={styles.cultureTextBullet}>{c}</Text>
+                              <View style={[styles.bulletDot, { backgroundColor: theme.primary }]} />
+                              <Text style={[styles.cultureTextBullet, { color: theme.subtext }]}>{c}</Text>
                             </View>
                           ))}
                         </View>
 
-                        <View style={styles.cultureCard}>
+                        <View style={[styles.cultureCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
                           <View style={styles.cultureHeader}>
-                            <Ionicons name="book-outline" size={20} color="#ff9100" />
-                            <Text style={styles.cultureTitle}>Mitos y Leyendas</Text>
+                            <Ionicons name="book-outline" size={20} color={theme.primary} />
+                            <Text style={[styles.cultureTitle, { color: theme.text }]}>Mitos y Leyendas</Text>
                           </View>
-                          <Text style={styles.cultureText}>{enrichedData.mitos_y_leyendas_guayanesas}</Text>
+                          <Text style={[styles.cultureText, { color: theme.subtext }]}>{enrichedData.mitos_y_leyendas_guayanesas}</Text>
                         </View>
                     </View>
                   ) : null}
 
                     {/* Galería de Muestreos (Siempre visible si hay datos) */}
                     <View style={styles.gallerySection}>
-                      <Text style={styles.galleryTitle}>Muestreos en la Base de Datos ({selectedRecord.allSightings?.length || 0})</Text>
+                      <Text style={[styles.galleryTitle, { color: theme.text }]}>Muestreos en la Base de Datos ({selectedRecord.allSightings?.length || 0})</Text>
                       <View style={styles.galleryGrid}>
                         {selectedRecord.allSightings?.map((sighting: any, idx: number) => {
                           const dateStr = sighting.created_at ? new Date(sighting.created_at).toLocaleDateString() : 'Reciente';
@@ -461,17 +449,17 @@ export default function RecordsScreen() {
                             <TouchableOpacity 
                               key={sighting.id || `sight-${idx}`} 
                               style={[
-                                styles.galleryItem, 
-                                activeSighting?.id === sighting.id && styles.galleryItemActive
+                                styles.galleryItem, { borderColor: theme.border },
+                                activeSighting?.id === sighting.id && [styles.galleryItemActive, { borderColor: theme.primary }]
                               ]}
                               onPress={() => { setActiveSighting(sighting); setExpandedDesc(false); }}
                               onLongPress={() => setPreviewImage(sighting.media_url)}
                               delayLongPress={250}
                             >
                               {sighting.media_url ? (
-                                <Image source={{ uri: sighting.media_url }} style={styles.galleryImage} />
+                                <Image source={{ uri: sighting.media_url }} style={styles.galleryImage} resizeMode="cover" />
                               ) : (
-                                <View style={[styles.galleryImage, { backgroundColor: '#333' }]} />
+                                <View style={[styles.galleryImage, { backgroundColor: theme.surface }]} />
                               )}
                               <View style={styles.sightingOverlay}>
                                 <Text style={styles.sightingDate}>{dateStr}</Text>
@@ -483,14 +471,14 @@ export default function RecordsScreen() {
                     </View>
                   
                   {(activeSighting?.descripcion || selectedRecord.descripcion) ? (
-                    <View style={[styles.cultureCard, {marginTop: 20, marginBottom: 40}]}>
-                      <Text style={styles.cultureTitle}>Notas del Avistamiento</Text>
+                    <View style={[styles.cultureCard, { backgroundColor: theme.card, borderColor: theme.border, marginTop: 20, marginBottom: 40}]}>
+                      <Text style={[styles.cultureTitle, { color: theme.text }]}>Notas del Avistamiento</Text>
                       <TouchableOpacity onPress={() => setExpandedDesc(!expandedDesc)} activeOpacity={0.8}>
-                        <Text style={styles.cultureText} numberOfLines={expandedDesc ? undefined : 2}>
+                        <Text style={[styles.cultureText, { color: theme.subtext, marginTop: 8 }]} numberOfLines={expandedDesc ? undefined : 2}>
                           {activeSighting?.descripcion || selectedRecord.descripcion}
                         </Text>
                       </TouchableOpacity>
-                      <Text style={styles.sightingDetailDate}>
+                      <Text style={[styles.sightingDetailDate, { color: theme.primary }]}>
                         Registrado el: {activeSighting?.created_at ? new Date(activeSighting.created_at).toLocaleString() : 'Fecha no disponible'}
                       </Text>
                     </View>
@@ -515,13 +503,13 @@ export default function RecordsScreen() {
           activeOpacity={1} 
           onPress={() => setPreviewImage(null)}
         >
-          <BlurView intensity={95} tint="dark" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={theme.mode === 'dark' ? 95 : 60} tint={theme.mode === 'dark' ? "dark" : "light"} style={StyleSheet.absoluteFill} />
           <TouchableOpacity 
             activeOpacity={1} 
-            style={styles.previewCard}
+            style={[styles.previewCard, { borderColor: theme.border, backgroundColor: theme.card }]}
             onPress={() => setPreviewImage(null)}
           >
-            <Image source={{ uri: previewImage || '' }} style={styles.previewFullImage} />
+            <Image source={{ uri: previewImage || '' }} style={styles.previewFullImage} resizeMode="contain" />
             <View style={styles.previewInfo}>
               <Text style={styles.previewHint}>Tocar para cerrar</Text>
             </View>
@@ -772,10 +760,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalImageContainer: {
-    width: '100%', height: 300, position: 'relative',
+    width: '100%', height: 380, position: 'relative',
   },
   modalImage: {
-    width: '100%', height: '100%', resizeMode: 'cover',
+    width: '100%', height: '100%',
   },
   closeModalBtn: {
     position: 'absolute', top: Platform.OS === 'ios' ? 50 : 20, right: 20,

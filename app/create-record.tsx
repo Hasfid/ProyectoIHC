@@ -50,7 +50,6 @@ export default function CreateRecordScreen() {
   const fromScanner = !!params.nombreTradicional;
   const iaCerteza = params.iaCerteza ? parseFloat(params.iaCerteza) : undefined;
 
-
   const [step, setStep] = useState<Step>(params.mediaUrl ? 'map' : 'media');
   const [mediaUri, setMediaUri] = useState(params.mediaUrl ?? '');
   const [tipoMedia, setTipoMedia] = useState(params.tipoMedia ?? 'imagen');
@@ -59,8 +58,9 @@ export default function CreateRecordScreen() {
   const [saved, setSaved] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
   const [description, setDescription] = useState('');
-  const isSavingRef = React.useRef(false); // guard para evitar doble envio
+  const isSavingRef = React.useRef(false);
 
+  const isDark = theme.mode === 'dark';
 
   const pickMedia = async (nextStep: Step = 'map') => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -73,9 +73,8 @@ export default function CreateRecordScreen() {
 
     const asset = result.assets[0];
     const mime = (asset.mimeType ?? 'image/jpeg').startsWith('video') ? 'video' : 'imagen';
-    
+
     let persistentUri = asset.uri;
-    // En Web los blob: URLs se destruyen al recargar. Leemos el blob a base64 inmediatamente para persistencia.
     if (isWeb && persistentUri.startsWith('blob:')) {
       try {
         const resp = await fetch(persistentUri);
@@ -99,7 +98,6 @@ export default function CreateRecordScreen() {
     }
   };
 
-
   const goToMap = async () => {
     setLocLoading(true);
     try {
@@ -116,9 +114,8 @@ export default function CreateRecordScreen() {
     }
   };
 
-
   const confirmAndSave = async () => {
-    if (isSavingRef.current) return; // evitar doble envio
+    if (isSavingRef.current) return;
     const loc = coords ?? { lat: 5.0, lng: -63.5 };
 
     if (!isPointInPolygon({ latitude: loc.lat, longitude: loc.lng }, GUAYANA_POLYGON)) {
@@ -156,64 +153,106 @@ export default function CreateRecordScreen() {
     }
   };
 
+  const goToConfirm = () => setStep('confirm');
+  const goToChangePhoto = () => pickMedia('confirm');
+  const goToChangeLocation = () => setStep('map');
+  const cancelRegistration = () => {
+    setMediaUri('');
+    setCoords(null);
+    setDescription('');
+    router.back();
+  };
 
-
-  // PASO 1: Selección de media
+  // ─── PASO 1: Selección de media ──────────────────────────────────────────
   if (step === 'media') {
     return (
-      <View style={s.container}>
+      <View style={[s.container, { backgroundColor: theme.background }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <StatusBar barStyle="dark-content" />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-        {/* Header */}
-        <View style={s.header}>
-          <TouchableOpacity onPress={() => router.back()} style={s.headerBtn}>
-            <Ionicons name="close" size={26} color="#333" />
-          </TouchableOpacity>
-          <Text style={s.headerTitle}>{i18n.t('createRecord.title')}</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Contenido */}
-        <View style={s.centerContent}>
-          {fromScanner && (
-            <View style={s.scannerBadge}>
-              <Ionicons name="scan-outline" size={14} color="#fff" />
-              <Text style={s.scannerText}>IA — {Math.round((iaCerteza ?? 0) * 100)}%</Text>
+        {/* Hero: área de foto */}
+        <TouchableOpacity
+          style={s.heroArea}
+          onPress={() => pickMedia()}
+          activeOpacity={0.9}
+        >
+          {mediaUri ? (
+            <Image source={{ uri: mediaUri }} style={s.heroImage} resizeMode="cover" />
+          ) : (
+            <View style={[s.heroEmpty, { backgroundColor: isDark ? '#0b1e15' : '#d4ede5' }]}>
+              <View style={[s.heroIconCircle, { backgroundColor: isDark ? 'rgba(52,211,153,0.15)' : 'rgba(0,121,107,0.12)' }]}>
+                <Ionicons name="camera" size={52} color={theme.primary} />
+              </View>
+              <Text style={[s.heroMainText, { color: theme.primary }]}>
+                {i18n.t('createRecord.selectPhoto')}
+              </Text>
+              <Text style={[s.heroSubText, { color: theme.subtext }]}>
+                {i18n.t('createRecord.selectCaption')}
+              </Text>
             </View>
           )}
 
-          <TouchableOpacity 
-            style={[s.mediaPicker, mediaUri && { borderWidth: 0, backgroundColor: 'transparent' }]} 
-            onPress={() => pickMedia()} 
-            activeOpacity={0.7}
-          >
-            {mediaUri ? (
-              <Image source={{ uri: mediaUri }} style={s.mediaPreview} />
-            ) : (
-              <View style={s.mediaEmpty}>
-                <View style={s.mediaIconCircle}>
-                  <Ionicons name="camera" size={40} color="#00796b" />
-                </View>
-                <Text style={s.mediaMainText}>{i18n.t('createRecord.selectPhoto')}</Text>
-                <Text style={s.mediaSubText}>{i18n.t('createRecord.selectCaption')}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-
+          {/* Overlay oscuro en la foto */}
           {mediaUri ? (
-            <TouchableOpacity style={s.nextBtn} onPress={goToMap} disabled={locLoading}>
-              {locLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Text style={s.nextBtnText}>{i18n.t('createRecord.locateOnMap')}</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#fff" />
-                </>
-              )}
-            </TouchableOpacity>
+            <View style={s.heroOverlay} />
           ) : null}
+
+          {/* Header flotante sobre el hero */}
+          <View style={s.heroHeader}>
+            <TouchableOpacity onPress={() => router.back()} style={[s.glassBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.25)' }]}>
+              <Ionicons name="close" size={22} color="#fff" />
+            </TouchableOpacity>
+            <Text style={s.heroTitle}>{i18n.t('createRecord.title')}</Text>
+            <View style={{ width: 40 }} />
+          </View>
+
+          {/* Badge de IA si viene del scanner */}
+          {fromScanner && (
+            <View style={s.iaBadge}>
+              <Ionicons name="scan-outline" size={13} color="#fff" />
+              <Text style={s.iaBadgeText}>IA — {Math.round((iaCerteza ?? 0) * 100)}%</Text>
+            </View>
+          )}
+
+          {/* Ícono de editar si ya hay foto */}
+          {mediaUri ? (
+            <View style={[s.heroEditBadge, { backgroundColor: isDark ? 'rgba(52,211,153,0.85)' : 'rgba(46,125,50,0.85)' }]}>
+              <Ionicons name="pencil" size={16} color="#fff" />
+            </View>
+          ) : null}
+        </TouchableOpacity>
+
+        {/* Card inferior */}
+        <View style={[s.bottomCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          {mediaUri ? (
+            <>
+              <Text style={[s.cardHint, { color: theme.subtext }]}>
+                {i18n.t('createRecord.selectCaption')}
+              </Text>
+              <TouchableOpacity
+                style={[s.primaryBtn, { backgroundColor: theme.primary }]}
+                onPress={goToMap}
+                disabled={locLoading}
+              >
+                {locLoading ? (
+                  <ActivityIndicator color={theme.primaryText} />
+                ) : (
+                  <>
+                    <Text style={[s.primaryBtnText, { color: theme.primaryText }]}>
+                      {i18n.t('createRecord.locateOnMap')}
+                    </Text>
+                    <Ionicons name="arrow-forward" size={20} color={theme.primaryText} />
+                  </>
+                )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={[s.cardHint, { color: theme.subtext, textAlign: 'center' }]}>
+              {i18n.t('createRecord.selectCaption')}
+            </Text>
+          )}
         </View>
+
         {saved && (
           <View style={s.savedToast}>
             <Ionicons name="checkmark-circle" size={24} color="#fff" />
@@ -224,25 +263,13 @@ export default function CreateRecordScreen() {
     );
   }
 
-  const goToConfirm = () => setStep('confirm');
-
-  const goToChangePhoto = () => pickMedia('confirm');
-  const goToChangeLocation = () => setStep('map');
-  const cancelRegistration = () => {
-    setMediaUri('');
-    setCoords(null);
-    setDescription('');
-    router.back();
-  };
-
-  // PASO 2: Mapa para ubicar
+  // ─── PASO 2: Mapa ─────────────────────────────────────────────────────────
   if (step === 'map') {
     return (
       <View style={[s.container, { backgroundColor: theme.background }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} />
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-        {/* Mapa fullscreen */}
         <View style={{ flex: 1 }}>
           <Map
             registrationLayout={isWeb}
@@ -254,7 +281,7 @@ export default function CreateRecordScreen() {
             }}
           />
 
-          {/* Pin central fijo */}
+          {/* Pin central */}
           <View style={s.pinOverlay} pointerEvents="none">
             <Ionicons name="location" size={48} color="#e53935" />
             {coords && (
@@ -264,7 +291,7 @@ export default function CreateRecordScreen() {
             )}
           </View>
 
-          {/* Mini preview de la foto seleccionada */}
+          {/* Mini preview */}
           {mediaUri ? (
             <View style={s.miniPreviewWrap}>
               <Image source={{ uri: mediaUri }} style={s.miniPreview} />
@@ -273,120 +300,166 @@ export default function CreateRecordScreen() {
         </View>
 
         {/* Header flotante */}
-        <View style={[s.mapTopBar, { backgroundColor: theme.surface }]}> 
-          <TouchableOpacity onPress={cancelRegistration} style={[s.mapBackBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+        <View style={[s.mapTopBar, {
+          backgroundColor: isDark ? 'rgba(8,14,20,0.92)' : 'rgba(255,255,255,0.92)',
+          borderBottomColor: theme.border,
+          borderBottomWidth: 1,
+        }]}>
+          <TouchableOpacity
+            onPress={cancelRegistration}
+            style={[s.mapBackBtn, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
+          >
             <Ionicons name="arrow-back" size={22} color={theme.text} />
           </TouchableOpacity>
           <Text style={[s.mapTopTitle, { color: theme.text }]}>{i18n.t('createRecord.mapTitle')}</Text>
           <View style={{ width: 40 }} />
         </View>
 
-        {/* Texto de instrucciones */}
-        <View style={[s.mapInstructionBar, { backgroundColor: theme.card }]}> 
-          <Text style={[s.mapInstructionText, { color: theme.subtext }]}>{i18n.t('createRecord.chooseLocationInstructions')}</Text>
+        {/* Instrucciones */}
+        <View style={[s.mapInstructionBar, { backgroundColor: theme.primarySoft }]}>
+          <Text style={[s.mapInstructionText, { color: theme.primary }]}>
+            {i18n.t('createRecord.chooseLocationInstructions')}
+          </Text>
         </View>
 
-        {/* Botón continuar a revisión */}
-        <View style={[s.mapBottomBar, { backgroundColor: theme.surface }]}> 
+        {/* Botón continuar */}
+        <View style={[s.mapBottomBar, {
+          backgroundColor: isDark ? 'rgba(8,14,20,0.95)' : 'rgba(255,255,255,0.95)',
+          borderTopColor: theme.border,
+          borderTopWidth: 1,
+        }]}>
           <TouchableOpacity
-            style={[s.confirmBtn, !coords && s.confirmBtnDisabled]}
+            style={[s.primaryBtn, { backgroundColor: theme.primary }, !coords && s.btnDisabled]}
             onPress={goToConfirm}
             disabled={!coords}
           >
-            <Text style={s.confirmBtnText}>{i18n.t('createRecord.reviewAndConfirm')}</Text>
+            <Text style={[s.primaryBtnText, { color: theme.primaryText }]}>
+              {i18n.t('createRecord.reviewAndConfirm')}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  // PASO 3: Revisión antes de enviar a draft
+  // ─── PASO 3: Confirmación ─────────────────────────────────────────────────
   if (step === 'confirm') {
     return (
-      <View style={[s.container, { backgroundColor: theme.background }]}> 
+      <View style={[s.container, { backgroundColor: theme.background }]}>
         <Stack.Screen options={{ headerShown: false }} />
-        <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} />
-
-        <View style={[s.confirmHeader, { backgroundColor: theme.surface }]}> 
-          <TouchableOpacity onPress={() => setStep('map')} style={[s.mapBackBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}> 
-            <Ionicons name="arrow-back" size={22} color={theme.text} />
-          </TouchableOpacity>
-          <Text style={[s.mapTopTitle, { color: theme.text }]}>{i18n.t('createRecord.reviewTitle')}</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
         <ScrollView
-          style={[s.confirmScroll, { backgroundColor: theme.background }]}
-          contentContainerStyle={s.confirmScrollContent}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: 40 }}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {mediaUri ? (
-            <TouchableOpacity onPress={goToChangePhoto} style={s.photoWrapper} activeOpacity={0.8}>
-              <Image source={{ uri: mediaUri }} style={s.confirmImage} />
-              <View style={s.photoEditBadge}>
-                <Ionicons name="pencil" size={18} color="#fff" />
-              </View>
-            </TouchableOpacity>
-          ) : null}
-
-          <Text style={[s.confirmHint, { color: theme.subtext }]}>{i18n.t('createRecord.reviewHint')}</Text>
-
+          {/* Hero: foto a pantalla completa */}
           <TouchableOpacity
-            style={[s.locationRow, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
-            onPress={goToChangeLocation}
-            activeOpacity={0.8}
-            disabled={saving || saved}
+            onPress={goToChangePhoto}
+            activeOpacity={0.9}
+            style={s.confirmHeroWrap}
           >
-            <Ionicons name="location-outline" size={24} color={theme.primary} />
-            <View style={s.locationTextGroup}>
-              <Text style={[s.fieldLabel, { color: theme.subtext }]}>{i18n.t('createRecord.locationLabel')}</Text>
-              {coords ? (
-                <View style={s.coordsHintRow}>
-                  <Text style={[s.coordsInline, { color: theme.text }]} selectable>
-                    {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
-                  </Text>
-                  <View style={s.locationHintWrap}>
-                    <Text style={[s.locationHintBeside, { color: theme.subtext }]} numberOfLines={3}>
+            {mediaUri ? (
+              <Image source={{ uri: mediaUri }} style={s.confirmHeroImage} resizeMode="cover" />
+            ) : (
+              <View style={[s.confirmHeroImage, { backgroundColor: isDark ? '#0b1e15' : '#d4ede5', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={64} color={theme.primary} />
+              </View>
+            )}
+            <View style={s.heroOverlay} />
+
+            {/* Header flotante sobre el hero */}
+            <View style={s.heroHeader}>
+              <TouchableOpacity
+                onPress={() => setStep('map')}
+                style={[s.glassBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.25)' }]}
+              >
+                <Ionicons name="arrow-back" size={22} color="#fff" />
+              </TouchableOpacity>
+              <Text style={s.heroTitle}>{i18n.t('createRecord.reviewTitle')}</Text>
+              <View style={{ width: 40 }} />
+            </View>
+
+            {/* Badge editar foto */}
+            <View style={[s.heroEditBadge, { backgroundColor: isDark ? 'rgba(52,211,153,0.85)' : 'rgba(46,125,50,0.85)' }]}>
+              <Ionicons name="pencil" size={16} color="#fff" />
+            </View>
+          </TouchableOpacity>
+
+          {/* Contenido formulario */}
+          <View style={[s.confirmBody, { backgroundColor: theme.background }]}>
+            <Text style={[s.confirmHint, { color: theme.subtext }]}>
+              {i18n.t('createRecord.reviewHint')}
+            </Text>
+
+            {/* Fila de ubicación */}
+            <TouchableOpacity
+              style={[s.locationRow, { backgroundColor: theme.card, borderColor: theme.border, borderWidth: 1 }]}
+              onPress={goToChangeLocation}
+              activeOpacity={0.8}
+              disabled={saving || saved}
+            >
+              <Ionicons name="location-outline" size={24} color={theme.primary} />
+              <View style={s.locationTextGroup}>
+                <Text style={[s.fieldLabel, { color: theme.subtext }]}>
+                  {i18n.t('createRecord.locationLabel')}
+                </Text>
+                {coords ? (
+                  <View style={s.coordsHintRow}>
+                    <Text style={[s.coordsInline, { color: theme.text }]} selectable>
+                      {coords.lat.toFixed(5)}, {coords.lng.toFixed(5)}
+                    </Text>
+                    <Text style={[s.locationHintBeside, { color: theme.subtext }]} numberOfLines={2}>
                       · {i18n.t('createRecord.changeLocationHint')}
                     </Text>
                   </View>
-                </View>
+                ) : (
+                  <Text style={[s.locationActionText, { color: theme.primary }]}>
+                    {i18n.t('createRecord.changeLocationHint')}
+                  </Text>
+                )}
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
+            </TouchableOpacity>
+
+            {/* Descripción */}
+            <TextInput
+              style={[s.descriptionInput, {
+                backgroundColor: theme.inputBackground,
+                borderColor: theme.border,
+                color: theme.text,
+              }]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder={i18n.t('createRecord.descriptionPlaceholder')}
+              placeholderTextColor={theme.placeholder}
+              multiline
+              numberOfLines={4}
+              editable={!saving && !saved}
+            />
+
+            {/* Botón guardar */}
+            <TouchableOpacity
+              style={[
+                s.primaryBtn,
+                { backgroundColor: theme.primary },
+                (saving || saved || !coords) && s.btnDisabled,
+              ]}
+              onPress={confirmAndSave}
+              disabled={saving || saved || !coords}
+              activeOpacity={0.85}
+            >
+              {saving || saved ? (
+                <ActivityIndicator color={theme.primaryText} />
               ) : (
-                <Text style={[s.locationActionText, { color: theme.primary }]}>{i18n.t('createRecord.changeLocationHint')}</Text>
+                <Text style={[s.primaryBtnText, { color: theme.primaryText }]}>
+                  {i18n.t('createRecord.sendToDraft')}
+                </Text>
               )}
-            </View>
-            <Ionicons name="chevron-forward" size={20} color={theme.subtext} />
-          </TouchableOpacity>
-
-          <TextInput
-            style={[s.descriptionInput, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder={i18n.t('createRecord.descriptionPlaceholder')}
-            placeholderTextColor={theme.placeholder}
-            multiline
-            numberOfLines={3}
-            editable={!saving && !saved}
-          />
-
-          <TouchableOpacity
-            style={[
-              s.saveDraftBtn,
-              (saving || saved || !coords) && s.saveDraftBtnDisabled,
-            ]}
-            onPress={confirmAndSave}
-            disabled={saving || saved || !coords}
-            activeOpacity={0.85}
-          >
-            {saving || saved ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={s.saveDraftBtnText} numberOfLines={1}>
-                {i18n.t('createRecord.sendToDraft')}
-              </Text>
-            )}
-          </TouchableOpacity>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
 
         {saved && (
@@ -404,80 +477,148 @@ export default function CreateRecordScreen() {
 
 
 
+const HERO_HEIGHT = isWeb ? Math.min(H * 0.55, 520) : H * 0.48;
+
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8faf9' },
+  container: { flex: 1 },
 
-  // Header
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
+  // ─── HERO ─────────────────────────────────────────────────────────────────
+  heroArea: {
+    width: '100%',
+    height: HERO_HEIGHT,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  heroImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroEmpty: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 14,
+  },
+  heroIconCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroMainText: { fontSize: 20, fontWeight: '700' },
+  heroSubText: { fontSize: 14, textAlign: 'center', paddingHorizontal: 32 },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.28)',
+  },
+
+  heroHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: isWeb ? 32 : 16,
+    paddingTop: Platform.OS === 'ios' ? 56 : (isWeb ? 24 : 18),
     paddingBottom: 12,
-    backgroundColor: '#f8faf9',
   },
-  headerBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#222' },
+  heroTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#fff',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  glassBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
 
-  // Contenido central
-  centerContent: {
-    flex: 1, justifyContent: 'center', alignItems: 'center',
-    paddingHorizontal: 24,
+  iaBadge: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(27,94,32,0.85)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  iaBadgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+
+  heroEditBadge: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
-  scannerBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1b5e20', paddingHorizontal: 14, paddingVertical: 6,
-    borderRadius: 20, marginBottom: 20,
+  // ─── CARD INFERIOR (paso 1) ───────────────────────────────────────────────
+  bottomCard: {
+    flex: 1,
+    paddingHorizontal: isWeb ? 32 : 24,
+    paddingTop: 24,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    ...(isWeb && {
+      maxWidth: 600,
+      alignSelf: 'center',
+      width: '100%',
+    }),
   },
-  scannerText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
+  cardHint: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 20,
+  },
 
-  // Selector de media
-  mediaPicker: {
-    width: isWeb ? Math.min(W * 0.65, 640) : W - 48,
-    height: isWeb ? Math.min(H * 0.6, 520) : H * 0.45,
-    borderRadius: 20, overflow: 'hidden',
-    backgroundColor: '#e0f2f1',
-    borderWidth: 2, borderColor: '#80cbc4', borderStyle: 'dashed',
+  // ─── BOTÓN PRIMARIO ────────────────────────────────────────────────────────
+  primaryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 16,
+    minHeight: 56,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
   },
-  mediaEmpty: {
-    flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12,
-  },
-  mediaIconCircle: {
-    width: 80, height: 80, borderRadius: 40,
-    backgroundColor: 'rgba(0,121,107,0.1)',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  mediaMainText: { fontSize: 18, fontWeight: '700', color: '#00796b' },
-  mediaSubText: { fontSize: 13, color: '#888', textAlign: 'center' },
-  mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
+  primaryBtnText: { fontSize: 17, fontWeight: '700' },
+  btnDisabled: { opacity: 0.5 },
 
-  // Botón siguiente
-  nextBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#00796b',
-    paddingHorizontal: 28, paddingVertical: 14,
-    borderRadius: 14, marginTop: 24,
-    elevation: 3,
-    shadowColor: '#00796b', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
-  },
-  nextBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-
-  // Mapa
+  // ─── MAPA ─────────────────────────────────────────────────────────────────
   mapTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: isWeb ? 40 : 12,
-    paddingTop: Platform.OS === 'ios' ? 56 : (isWeb ? 32 : 12),
+    paddingTop: Platform.OS === 'ios' ? 56 : (isWeb ? 24 : 14),
     paddingBottom: 10,
-    backgroundColor: 'rgba(255,255,255,0.92)',
   },
   mapBackBtn: {
     width: 40, height: 40, borderRadius: 20,
-    backgroundColor: '#f0f0f0',
     justifyContent: 'center', alignItems: 'center',
   },
-  mapTopTitle: { fontSize: 16, fontWeight: '700', color: '#222' },
-
+  mapTopTitle: { fontSize: 16, fontWeight: '700' },
   pinOverlay: {
     position: 'absolute',
     top: '50%', left: '50%',
@@ -489,22 +630,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 4,
     borderRadius: 12, fontSize: 11, fontWeight: 'bold', marginTop: 4,
   },
-
-  /** Miniatura: web (registro) arriba a la derecha alineada con la búsqueda; nativo abajo a la derecha */
   miniPreviewWrap: {
     position: 'absolute',
     right: isWeb ? 56 : 16,
-    width: 72,
-    height: 72,
-    borderRadius: 14,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#fff',
+    width: 72, height: 72,
+    borderRadius: 14, overflow: 'hidden',
+    borderWidth: 2, borderColor: '#fff',
     elevation: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
     zIndex: 15,
     ...Platform.select({
       web: { top: 76 },
@@ -513,139 +646,71 @@ const s = StyleSheet.create({
     }),
   },
   miniPreview: { width: '100%', height: '100%' },
-
+  mapInstructionBar: { paddingHorizontal: 20, paddingVertical: 10 },
+  mapInstructionText: { fontSize: 13, textAlign: 'center', fontWeight: '600' },
   mapBottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingHorizontal: isWeb ? 40 : 20,
-    paddingTop: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-  },
-  confirmBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#2e7d32',
-    padding: 16, borderRadius: 14,
-    elevation: 3,
-    shadowColor: '#2e7d32', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 },
-  },
-  confirmBtnText: { color: '#fff', fontSize: 17, fontWeight: '700' },
-  confirmBtnDisabled: { opacity: 0.5 },
-  saveDraftBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'stretch',
-    backgroundColor: '#2e7d32',
-    paddingVertical: 18,
-    paddingHorizontal: 28,
-    borderRadius: 14,
-    overflow: 'hidden',
-    minHeight: 58,
-    marginTop: 4,
-    elevation: 3,
-    shadowColor: '#2e7d32',
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  saveDraftBtnDisabled: { opacity: 0.55 },
-  saveDraftBtnText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
-    textAlign: 'center',
-    overflow: 'hidden',
-  },
-  mapInstructionBar: { paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#e8f5e9' },
-  mapInstructionText: { color: '#2e7d32', fontSize: 14, textAlign: 'center' },
-  confirmHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 56 : 16,
-    paddingBottom: 12,
-    backgroundColor: '#f8faf9',
-  },
-  confirmScroll: { flex: 1 },
-  confirmScrollContent: {
-    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 28,
-    flexGrow: 1,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
   },
-  confirmImage: {
+
+  // ─── CONFIRM ───────────────────────────────────────────────────────────────
+  confirmHeroWrap: {
     width: '100%',
-    height: isWeb ? 400 : 240,
-    borderRadius: 20,
-    marginBottom: 16,
-    resizeMode: 'contain',
-    backgroundColor: '#000',
+    height: HERO_HEIGHT,
+    overflow: 'hidden',
+    position: 'relative',
   },
-  confirmHint: { color: '#555', fontSize: 14, marginBottom: 18, lineHeight: 20 },
-  photoWrapper: { position: 'relative', marginBottom: 16 },
-  photoEditBadge: {
-    position: 'absolute', top: 12, right: 12,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(46, 125, 50, 0.9)',
-    justifyContent: 'center', alignItems: 'center',
+  confirmHeroImage: {
+    width: '100%',
+    height: '100%',
   },
+  confirmBody: {
+    paddingHorizontal: isWeb ? 32 : 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    ...(isWeb && {
+      maxWidth: 680,
+      alignSelf: 'center',
+      width: '100%',
+    }),
+  },
+  confirmHint: { fontSize: 14, marginBottom: 18, lineHeight: 20 },
   locationRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
-    padding: 16, borderRadius: 16, backgroundColor: '#e8f5e9',
+    padding: 16, borderRadius: 16,
     marginBottom: 18,
   },
   locationTextGroup: { flex: 1, minWidth: 0 },
-  coordsHintRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  coordsInline: {
-    fontSize: 14,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'] as const,
-  },
-  locationHintWrap: {
-    flex: 1,
-    flexBasis: 140,
-    minWidth: 0,
-  },
-  locationHintBeside: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  locationActionText: { color: '#2e7d32', fontSize: 13 },
-  fieldLabel: { color: '#777', fontSize: 13, marginBottom: 4, fontWeight: '700' },
+  coordsHintRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 4 },
+  coordsInline: { fontSize: 14, fontWeight: '700', fontVariant: ['tabular-nums'] as const },
+  locationHintBeside: { fontSize: 13, lineHeight: 18, flex: 1 },
+  locationActionText: { fontSize: 13 },
+  fieldLabel: { fontSize: 13, marginBottom: 4, fontWeight: '700' },
   descriptionInput: {
-    minHeight: 100,
+    minHeight: 110,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#d0d0d0',
     padding: 14,
     textAlignVertical: 'top',
-    marginBottom: 18,
-    backgroundColor: '#fff',
-    color: '#222',
+    marginBottom: 20,
+    fontSize: 15,
+    lineHeight: 22,
   },
 
+  // ─── TOAST ────────────────────────────────────────────────────────────────
   savedToast: {
     position: 'absolute',
     bottom: Platform.OS === 'ios' ? 100 : 90,
     alignSelf: 'center',
     backgroundColor: '#1b5e20',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 20, paddingVertical: 12,
     borderRadius: 24,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
     elevation: 6,
     shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
     zIndex: 100,
   },
-  savedToastText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  savedToastText: { color: '#fff', fontSize: 15, fontWeight: '700' },
 });
