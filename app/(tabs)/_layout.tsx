@@ -145,7 +145,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
               ]}
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
-              <Ionicons name="person" size={isSmallScreen ? 18 : 22} color="#000" />
+              <Ionicons name="person" size={isSmallScreen ? 18 : 22} color={theme.text} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setMenuOpen(!menuOpen)}

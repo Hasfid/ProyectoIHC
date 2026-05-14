@@ -50,6 +50,7 @@ export default function ProfileScreen() {
   const [recordSubTab, setRecordSubTab] = useState<RecordSubTab>('published');
   const [offlineDrafts, setOfflineDrafts] = useState<DraftRecord[]>([]);
   const [selectingDraft, setSelectingDraft] = useState<DraftRecord | null>(null);
+  const [editDraftDesc, setEditDraftDesc] = useState('');
   const [previewDraft, setPreviewDraft] = useState<DraftRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -336,6 +337,7 @@ export default function ProfileScreen() {
         peligrosidad: candidate.peligrosidad,
         endemismo: candidate.endemismo,
         ia_certeza: candidate.iaCerteza,
+        descripcion: editDraftDesc.trim() || selectingDraft.descripcion,
         metadatos_especie: {
           ...selectingDraft.metadatos_especie,
           origen: 'scanner-offline-user-selected',
@@ -356,6 +358,31 @@ export default function ProfileScreen() {
       setIsSubmitting(false);
     }
   };
+
+  const handleReprocessDraft = async () => {
+    if (!selectingDraft || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await updateDraft(selectingDraft.id, {
+        status: 'pending_ai',
+        last_error: undefined,
+        metadatos_especie: {
+          ...selectingDraft.metadatos_especie,
+          all_candidates: undefined
+        }
+      });
+      setSelectingDraft(null);
+      syncDrafts();
+      Alert.alert('Reprocesando', 'La IA analizará la imagen nuevamente.');
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Error', 'No se pudo enviar a reprocesar.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // ── Handlers de Registros Guardados ──
 
   /** Inicializa la sesión y dispara la carga de perfil, stats y registros */
   const fetchSessionAndProfile = async () => {
@@ -1056,7 +1083,7 @@ export default function ProfileScreen() {
                         <Text style={[styles.draftDate, { color: theme.subtext }] }>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
-                        {(draft.status === 'rejected' || (draft.status === 'pending_ai' && draft.last_error)) && draft.last_error ? (
+                        {draft.last_error ? (
                           <Text style={{ fontSize: 11, color: theme.error, marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
                             {draft.last_error}
                           </Text>
@@ -1066,7 +1093,10 @@ export default function ProfileScreen() {
                         {draft.status === 'pending_selection' ? (
                           <TouchableOpacity
                             style={[styles.draftRetryBtn, { backgroundColor: theme.primary, width: 'auto', paddingHorizontal: 12 }]}
-                            onPress={() => setSelectingDraft(draft)}
+                            onPress={() => {
+                              setSelectingDraft(draft);
+                              setEditDraftDesc(draft.descripcion || '');
+                            }}
                           >
                             <Text style={{ color: theme.primaryText, fontSize: 12, fontWeight: 'bold' }}>{i18n.t('common.confirm')}</Text>
                           </TouchableOpacity>
@@ -1201,9 +1231,12 @@ export default function ProfileScreen() {
         >
           <View style={styles.recordModalOverlay}>
             {selectedRecord && (
-              <View style={styles.recordModalContent}>
+              <View style={[styles.recordModalContent, { backgroundColor: theme.background }]}>
                 <ScrollView showsVerticalScrollIndicator={false}>
-                  <Image source={{ uri: selectedRecord.media_url }} style={styles.recordModalImage} />
+                  <Image 
+                    source={{ uri: selectedRecord.media_url }} 
+                    style={[styles.recordModalImage, Platform.OS === 'web' && { height: 400, resizeMode: 'contain', backgroundColor: 'rgba(255,255,255,0.05)' }]} 
+                  />
                   <TouchableOpacity
                     style={styles.recordModalClose}
                     onPress={() => { setSelectedRecord(null); setEditingRecord(null); setExpandedRecordDesc(false); }}
@@ -1242,28 +1275,28 @@ export default function ProfileScreen() {
                       </View>
                     ) : (
                       <>
-                        <Text style={styles.recordModalTitle}>{selectedRecord.nombre_tradicional}</Text>
+                        <Text style={[styles.recordModalTitle, { color: theme.text }]}>{selectedRecord.nombre_tradicional}</Text>
                         {selectedRecord.nombre_cientifico ? (
                           <Text style={styles.recordModalScientific}>{selectedRecord.nombre_cientifico}</Text>
                         ) : null}
                         <TouchableOpacity onPress={() => setExpandedRecordDesc(!expandedRecordDesc)} activeOpacity={0.8}>
-                          <Text style={styles.recordModalDesc} numberOfLines={expandedRecordDesc ? undefined : 2}>
+                          <Text style={[styles.recordModalDesc, { color: theme.subtext }]} numberOfLines={expandedRecordDesc ? undefined : 2}>
                             {selectedRecord.descripcion || 'Sin descripción'}
                           </Text>
                         </TouchableOpacity>
 
                         {/* Enriquecimiento IA */}
                         {loadingEnrichedData ? (
-                          <ActivityIndicator color="#2e7d32" style={{ marginVertical: 20 }} />
+                          <ActivityIndicator color={theme.primary} style={{ marginVertical: 20 }} />
                         ) : enrichedData ? (
                           <View style={styles.enrichedSection}>
-                            <View style={styles.enrichedCard}>
-                              <Text style={styles.enrichedTitle}>Información Biológica</Text>
-                              <Text style={styles.enrichedText}>{enrichedData.descripcion_biologica}</Text>
+                            <View style={[styles.enrichedCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                              <Text style={[styles.enrichedTitle, { color: theme.text }]}>Información Biológica</Text>
+                              <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.descripcion_biologica}</Text>
                             </View>
-                            <View style={styles.enrichedCard}>
-                              <Text style={styles.enrichedTitle}>Mitos y Leyendas</Text>
-                              <Text style={styles.enrichedText}>{enrichedData.mitos}</Text>
+                            <View style={[styles.enrichedCard, { backgroundColor: theme.card, borderColor: theme.border }]}>
+                              <Text style={[styles.enrichedTitle, { color: theme.text }]}>Mitos y Leyendas</Text>
+                              <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.mitos}</Text>
                             </View>
                           </View>
                         ) : null}
@@ -1316,8 +1349,8 @@ export default function ProfileScreen() {
             {editPhoto && !editPhoto.includes('images.unsplash.com') ? (
               <Image source={{ uri: editPhoto }} style={styles.editProfileImage} />
             ) : (
-              <View style={[styles.editProfileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' }]}> 
-                <Ionicons name="person" size={50} color="#ccc" />
+              <View style={[styles.editProfileImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: isDarkMode ? 'rgba(255,255,255,0.1)' : '#cbd5e1' }]}> 
+                <Ionicons name="person" size={50} color="#fff" />
               </View>
             )}
             <TouchableOpacity onPress={pickImage} style={styles.changePhotoButton}>
@@ -1411,7 +1444,7 @@ export default function ProfileScreen() {
                   </TouchableOpacity>
                 </View>
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
-                  <Image source={{ uri: selectingDraft.media_uri }} style={{ width: '100%', height: 200, borderRadius: 16, marginBottom: 20 }} />
+                  <Image source={{ uri: selectingDraft.media_uri }} style={{ width: '100%', height: 300, resizeMode: 'contain', borderRadius: 16, marginBottom: 20 }} />
                   <Text style={{ fontSize: 16, color: theme.subtext, marginBottom: 12 }}>¿Cuál de estos identificaste?</Text>
                   
                   {((selectingDraft.metadatos_especie as any)?.all_candidates || []).map((cand: any, idx: number) => (
@@ -1438,7 +1471,7 @@ export default function ProfileScreen() {
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>{cand.nombreTradicional}</Text>
                         <Text style={{ fontSize: 14, color: theme.subtext, fontStyle: 'italic' }}>{cand.nombreCientifico}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 12 }}>
-                          <Text style={{ fontSize: 12, color: theme.primary }}>Certeza: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
+                          <Text style={{ fontSize: 12, color: theme.primary }}>Certeza: {Math.round((cand.iaCerteza > 1 ? cand.iaCerteza / 100 : cand.iaCerteza) * 10)}/10</Text>
                           {candidateCounts[cand.nombreCientifico] !== undefined && (
                             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
                               <Ionicons name="eye-outline" size={12} color={theme.primary} style={{ marginRight: 4 }} />
@@ -1452,6 +1485,40 @@ export default function ProfileScreen() {
                       <Ionicons name="chevron-forward" size={20} color={theme.muted} />
                     </TouchableOpacity>
                   ))}
+
+                  <Text style={{ fontSize: 16, color: theme.text, marginTop: 16, marginBottom: 8, fontWeight: 'bold' }}>Descripción del avistamiento</Text>
+                  <TextInput
+                    style={[styles.input, styles.textArea, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground, marginBottom: 20 }]}
+                    value={editDraftDesc}
+                    onChangeText={setEditDraftDesc}
+                    multiline
+                    numberOfLines={3}
+                    placeholder="Agrega notas o descripción (opcional)"
+                    placeholderTextColor={theme.placeholder}
+                    editable={!isSubmitting}
+                  />
+
+                  <TouchableOpacity 
+                    style={{ 
+                      flexDirection: 'row', 
+                      alignItems: 'center', 
+                      justifyContent: 'center',
+                      backgroundColor: 'transparent', 
+                      padding: 16, 
+                      borderRadius: 16, 
+                      marginTop: 8, 
+                      borderWidth: 2, 
+                      borderStyle: 'dashed',
+                      borderColor: theme.primary,
+                      opacity: isSubmitting ? 0.5 : 1
+                    }}
+                    onPress={handleReprocessDraft}
+                    disabled={isSubmitting}
+                  >
+                    <Ionicons name="refresh" size={20} color={theme.primary} style={{ marginRight: 8 }} />
+                    <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.primary }}>Ninguno, volver a procesar con IA</Text>
+                  </TouchableOpacity>
+
                 </ScrollView>
               </View>
             </View>
@@ -1896,8 +1963,10 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   draftPreviewCard: {
-    width: '80%',
-    aspectRatio: 1, // Proporción cuadrada para que sea más equilibrado
+    width: Platform.OS === 'web' ? '100%' : '80%',
+    maxWidth: 400,
+    aspectRatio: Platform.OS === 'web' ? undefined : 1,
+    height: Platform.OS === 'web' ? 400 : undefined,
     backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: 24,
     overflow: 'hidden',
@@ -1912,7 +1981,7 @@ const styles = StyleSheet.create({
   draftPreviewImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
+    resizeMode: 'contain',
   },
   draftPreviewHintContainer: {
     position: 'absolute',

@@ -66,12 +66,31 @@ export default function CreateRecordScreen() {
       mediaTypes: ['images'],
       allowsMultipleSelection: false,
       quality: 0.85,
+      base64: true,
     });
     if (result.canceled || !result.assets?.[0]) return;
 
     const asset = result.assets[0];
-    setMediaUri(asset.uri);
-    setTipoMedia((asset.mimeType ?? 'image/jpeg').startsWith('video') ? 'video' : 'imagen');
+    const mime = (asset.mimeType ?? 'image/jpeg').startsWith('video') ? 'video' : 'imagen';
+    
+    let persistentUri = asset.uri;
+    // En Web los blob: URLs se destruyen al recargar. Leemos el blob a base64 inmediatamente para persistencia.
+    if (isWeb && persistentUri.startsWith('blob:')) {
+      try {
+        const resp = await fetch(persistentUri);
+        const blob = await resp.blob();
+        persistentUri = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result as string);
+          reader.readAsDataURL(blob);
+        });
+      } catch (e) {
+        console.error('Error convirtiendo blob a data URI', e);
+      }
+    }
+
+    setMediaUri(persistentUri);
+    setTipoMedia(mime);
     if (nextStep === 'map') {
       goToMap();
     } else {
@@ -160,7 +179,11 @@ export default function CreateRecordScreen() {
             </View>
           )}
 
-          <TouchableOpacity style={s.mediaPicker} onPress={() => pickMedia()} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={[s.mediaPicker, mediaUri && { borderWidth: 0, backgroundColor: 'transparent' }]} 
+            onPress={() => pickMedia()} 
+            activeOpacity={0.7}
+          >
             {mediaUri ? (
               <Image source={{ uri: mediaUri }} style={s.mediaPreview} />
             ) : (
@@ -422,7 +445,7 @@ const s = StyleSheet.create({
   },
   mediaMainText: { fontSize: 18, fontWeight: '700', color: '#00796b' },
   mediaSubText: { fontSize: 13, color: '#888', textAlign: 'center' },
-  mediaPreview: { width: '100%', height: '100%', resizeMode: 'contain', backgroundColor: '#000' },
+  mediaPreview: { width: '100%', height: '100%', resizeMode: 'cover' },
 
   // Botón siguiente
   nextBtn: {
@@ -439,8 +462,8 @@ const s = StyleSheet.create({
   mapTopBar: {
     position: 'absolute', top: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12,
-    paddingTop: Platform.OS === 'ios' ? 56 : 12,
+    paddingHorizontal: isWeb ? 40 : 12,
+    paddingTop: Platform.OS === 'ios' ? 56 : (isWeb ? 32 : 12),
     paddingBottom: 10,
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
@@ -489,7 +512,8 @@ const s = StyleSheet.create({
 
   mapBottomBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    padding: 20,
+    paddingHorizontal: isWeb ? 40 : 20,
+    paddingTop: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 20,
     backgroundColor: 'rgba(255,255,255,0.95)',
   },

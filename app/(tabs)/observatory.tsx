@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import { followUser, getFollowingIds, unfollowUser } from '../../lib/follows';
 import { supabase } from '../../lib/supabase';
+import { Video, ResizeMode } from 'expo-av';
 import { useTheme } from '../../lib/theme';
 import { i18n } from '../../lib/i18n';
 import { notifyPostLike, notifyPostComment } from '../../lib/notifications';

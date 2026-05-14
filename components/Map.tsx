@@ -409,12 +409,12 @@ export default function Map({
 
       {selected && (
         <View style={s.cardWrapper} pointerEvents="box-none">
-          <View style={s.card}>
-            <TouchableOpacity style={s.cardClose} onPress={closeCard}>
+          <View style={[s.card, { backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.9)', borderColor: isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.1)' }]}>
+            <TouchableOpacity style={[s.cardClose, { backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)' }]} onPress={closeCard}>
               <Ionicons name="close" size={16} color="#34d399" />
             </TouchableOpacity>
 
-            <Text style={s.cardTitle} numberOfLines={1}>
+            <Text style={[s.cardTitle, { color: theme.text }]} numberOfLines={1}>
               {(selected.nombre_tradicional || '—').toUpperCase()}
             </Text>
             {selected.nombre_cientifico ? (

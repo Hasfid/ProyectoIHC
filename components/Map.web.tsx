@@ -264,7 +264,7 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
       padding: 12px 14px;
       cursor: pointer;
       transition: background 0.15s ease;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid var(--search-item-border, rgba(255,255,255,0.06));
       color: var(--search-text, #e2e8f0);
     }
     .ecos-search-result-item:last-child {
@@ -375,6 +375,7 @@ export default function MapWeb({
 }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
+  const [selectedRecord, setSelectedRecord] = useState<any>(null);
   const [cssReady, setCssReady] = useState(false);
   const [showGuayanaLabel, setShowGuayanaLabel] = useState(true);
   const { theme } = useTheme();
@@ -556,6 +557,9 @@ export default function MapWeb({
         const zoom = map.getZoom();
         setShowGuayanaLabel(zoom <= 8.5);
       },
+      click: () => {
+        setSelectedRecord(null);
+      }
     });
 
     useEffect(() => {
@@ -564,6 +568,17 @@ export default function MapWeb({
       }
     }, [map]);
 
+    return null;
+  };
+
+  /** Componente para hacer zoom dinámico al tocar un registro */
+  const FlyToRecord = ({ record, useMap }: { record: any, useMap: any }) => {
+    const map = useMap();
+    useEffect(() => {
+      if (record && record._renderLat != null && record._renderLng != null) {
+        map.flyTo([record._renderLat, record._renderLng], 16, { duration: 1.2 });
+      }
+    }, [record, map]);
     return null;
   };
 
@@ -738,6 +753,9 @@ export default function MapWeb({
         {/* Ubicación del usuario: círculo de 5km */}
         {userLocation && <UserLocationLayer userLocation={userLocation} useMap={useMap} L={L} Marker={Marker} />}
 
+        {/* FlyTo al registro seleccionado */}
+        {selectedRecord && <FlyToRecord record={selectedRecord} useMap={useMap} />}
+
         {/* Marcadores de registros (datos de Supabase) */}
         {records.map((record: any) => {
           const lat = record._renderLat;
@@ -749,123 +767,8 @@ export default function MapWeb({
               key={record.id}
               position={[lat, lng]}
               icon={createCustomIcon(record.media_url, record.nombre_tradicional)}
-            >
-              <Popup className="ecos-popup" maxWidth={260} minWidth={240}>
-                <div style={{ margin: 0, padding: 0 }}>
-
-                  {/* Imagen de cabecera */}
-                  <div style={{ width: '100%', height: 145, overflow: 'hidden', position: 'relative' }}>
-                    {record.media_url ? (
-                      <img
-                        src={record.media_url}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                      />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', background: '#0a1a0e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>
-                        🌿
-                      </div>
-                    )}
-                    {/* Badge de categoría */}
-                    <div style={{
-                      position: 'absolute', bottom: 8, left: 8,
-                      background: 'rgba(0,0,0,0.75)',
-                      backdropFilter: 'blur(8px)',
-                      padding: '3px 10px',
-                      borderRadius: 4,
-                      border: '1px solid rgba(52,211,153,0.5)',
-                      fontSize: 9,
-                      color: '#34d399',
-                      fontWeight: 700,
-                      fontFamily: 'ui-monospace, monospace',
-                      letterSpacing: '1.5px',
-                    }}>
-                      {getCategoryLabel(record)}
-                    </div>
-                  </div>
-
-                  {/* Contenido HUD */}
-                  <div style={{ padding: '14px 16px 16px' }}>
-
-                    {/* Nombre */}
-                    <div style={{
-                      color: '#fff',
-                      fontSize: 15,
-                      fontWeight: 700,
-                      marginBottom: 2,
-                      fontFamily: 'ui-monospace, monospace',
-                      letterSpacing: '0.5px',
-                    }}>
-                      {(record.nombre_tradicional || '—').toUpperCase()}
-                    </div>
-
-                    {/* Nombre científico */}
-                    {record.nombre_cientifico && (
-                      <div style={{
-                        color: '#34d399',
-                        fontSize: 11,
-                        fontStyle: 'italic',
-                        marginBottom: 10,
-                        fontFamily: 'ui-monospace, monospace',
-                      }}>
-                        &gt; {record.nombre_cientifico}
-                      </div>
-                    )}
-
-                    {/* Descripción */}
-                    {record.descripcion && (
-                      <div style={{
-                        color: '#9ca3af',
-                        fontSize: 11,
-                        lineHeight: '1.55',
-                        marginBottom: 10,
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical',
-                        overflow: 'hidden',
-                        fontFamily: 'ui-sans-serif, system-ui',
-                      }}>
-                        {record.descripcion}
-                      </div>
-                    )}
-
-                    {/* Coordenadas + Fecha */}
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <div style={metaBadgeStyle}>
-                        [{lat.toFixed(4)}, {lng.toFixed(4)}]
-                      </div>
-                      {record.created_at && (
-                        <div style={metaBadgeStyle}>
-                          T · {formatDate(record.created_at)}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Etiquetas hábitat / alimentación */}
-                    {(record.alimentacion || record.habitat) && (
-                      <div style={{
-                        marginTop: 10,
-                        paddingTop: 10,
-                        borderTop: '1px solid rgba(52,211,153,0.12)',
-                        display: 'flex',
-                        gap: 6,
-                        flexWrap: 'wrap',
-                      }}>
-                        {record.alimentacion && (
-                          <span style={tagStyle('#34d399', 'rgba(52,211,153,0.1)')}>
-                            🍃 {record.alimentacion}
-                          </span>
-                        )}
-                        {record.habitat && (
-                          <span style={tagStyle('#60a5fa', 'rgba(96,165,250,0.1)')}>
-                            🏔️ {record.habitat}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Popup>
-            </Marker>
+              eventHandlers={{ click: () => setSelectedRecord({ ...record, _clickTime: Date.now() }) }}
+            />
           );
         })}
       </MapContainer>
@@ -897,9 +800,12 @@ export default function MapWeb({
               maxWidth: 420,
               width: 'min(420px, calc(100% - 32px))',
             }),
-        } as React.CSSProperties & Record<string, string>}
+        }}
       >
-        <div className="ecos-search-bar">
+        <div className="ecos-search-bar" style={{
+          background: isDark ? 'rgba(5,10,8,0.85)' : 'rgba(255,255,255,0.95)',
+          borderColor: isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.15)'
+        }}>
           <Ionicons name="search" size={18} color="#34d399" style={{ marginRight: 8 }} />
           <input
             type="text"
@@ -911,6 +817,7 @@ export default function MapWeb({
                 handleSubmitSearch();
               }
             }}
+            style={{ color: isDark ? '#fff' : '#111' }}
           />
           {searching && (
             <span style={{ color: '#34d399', fontSize: 12, animation: 'pulse 1s infinite' }}>...</span>
@@ -924,13 +831,21 @@ export default function MapWeb({
         {searchResults.length > 0 && (
           <div
             className="ecos-search-results"
-            style={registrationLayout ? { marginTop: 6 } : undefined}
+            style={{
+              marginTop: registrationLayout ? 6 : 0,
+              background: isDark ? 'rgba(5,10,8,0.92)' : 'rgba(255,255,255,0.95)',
+              borderColor: isDark ? 'rgba(52,211,153,0.2)' : 'rgba(0,0,0,0.1)',
+            }}
           >
             {searchResults.map((result: any, idx: number) => (
               <div
                 key={idx}
                 className="ecos-search-result-item"
                 onClick={() => handleSelectResult(result)}
+                style={{
+                  borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+                  color: isDark ? '#e2e8f0' : '#111'
+                }}
               >
                 <Ionicons name="location-outline" size={16} color="#34d399" />
                 <span className="result-text">{result.display_name}</span>
@@ -939,6 +854,145 @@ export default function MapWeb({
           </div>
         )}
       </div>
+      {/* ── Barra Lateral de Registro (reemplazo del Popup) ── */}
+      {selectedRecord && (
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 320,
+          backgroundColor: isDark ? '#111924' : '#fff',
+          borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+          zIndex: 1001,
+          display: 'flex',
+          flexDirection: 'column',
+          boxShadow: '-4px 0 15px rgba(0,0,0,0.15)',
+          overflowY: 'auto',
+        }}>
+          {/* Botón Cerrar */}
+          <div style={{ position: 'absolute', top: 16, right: 16, zIndex: 10 }}>
+            <button
+              onClick={() => setSelectedRecord(null)}
+              style={{
+                background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)',
+                border: 'none',
+                width: 32, height: 32,
+                borderRadius: 16,
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: isDark ? '#fff' : '#000',
+                fontSize: 18,
+              }}
+            >
+              ✕
+            </button>
+          </div>
+          
+          {/* Contenido (igual al popup) */}
+          <div style={{ width: '100%', height: 350, overflow: 'hidden', position: 'relative', background: isDark ? 'rgba(255,255,255,0.05)' : '#f5f5f5' }}>
+            {selectedRecord.media_url ? (
+              <img
+                src={selectedRecord.media_url}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              />
+            ) : (
+              <div style={{ width: '100%', height: '100%', background: '#0a1a0e', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 50 }}>
+                🌿
+              </div>
+            )}
+            <div style={{
+              position: 'absolute', bottom: 12, left: 16,
+              background: 'rgba(0,0,0,0.75)',
+              backdropFilter: 'blur(8px)',
+              padding: '4px 12px',
+              borderRadius: 6,
+              border: '1px solid rgba(52,211,153,0.5)',
+              fontSize: 10,
+              color: '#34d399',
+              fontWeight: 700,
+              fontFamily: 'ui-monospace, monospace',
+              letterSpacing: '1.5px',
+            }}>
+              {getCategoryLabel(selectedRecord)}
+            </div>
+          </div>
+
+          <div style={{ padding: '20px' }}>
+            {/* Nombre */}
+            <div style={{
+              color: isDark ? '#fff' : '#111',
+              fontSize: 20,
+              fontWeight: 700,
+              marginBottom: 4,
+              fontFamily: 'ui-monospace, monospace',
+              letterSpacing: '0.5px',
+            }}>
+              {(selectedRecord.nombre_tradicional || '—').toUpperCase()}
+            </div>
+
+            {/* Nombre científico */}
+            {selectedRecord.nombre_cientifico && (
+              <div style={{
+                color: '#34d399',
+                fontSize: 13,
+                fontStyle: 'italic',
+                marginBottom: 16,
+                fontFamily: 'ui-monospace, monospace',
+              }}>
+                &gt; {selectedRecord.nombre_cientifico}
+              </div>
+            )}
+
+            {/* Descripción */}
+            {selectedRecord.descripcion && (
+              <div style={{
+                color: isDark ? '#9ca3af' : '#4b5563',
+                fontSize: 14,
+                lineHeight: '1.6',
+                marginBottom: 20,
+                fontFamily: 'ui-sans-serif, system-ui',
+              }}>
+                {selectedRecord.descripcion}
+              </div>
+            )}
+
+            {/* Coordenadas + Fecha */}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 20 }}>
+              <div style={{...metaBadgeStyle, padding: '6px 12px', fontSize: 11}}>
+                [{parseFloat(selectedRecord._renderLat).toFixed(4)}, {parseFloat(selectedRecord._renderLng).toFixed(4)}]
+              </div>
+              {selectedRecord.created_at && (
+                <div style={{...metaBadgeStyle, padding: '6px 12px', fontSize: 11}}>
+                  T · {formatDate(selectedRecord.created_at)}
+                </div>
+              )}
+            </div>
+
+            {/* Etiquetas hábitat / alimentación */}
+            {(selectedRecord.alimentacion || selectedRecord.habitat) && (
+              <div style={{
+                paddingTop: 16,
+                borderTop: `1px solid ${isDark ? 'rgba(52,211,153,0.12)' : 'rgba(0,0,0,0.06)'}`,
+                display: 'flex',
+                gap: 8,
+                flexWrap: 'wrap',
+              }}>
+                {selectedRecord.alimentacion && (
+                  <span style={{...tagStyle('#34d399', 'rgba(52,211,153,0.1)'), fontSize: 12, padding: '6px 12px'}}>
+                    🍃 {selectedRecord.alimentacion}
+                  </span>
+                )}
+                {selectedRecord.habitat && (
+                  <span style={{...tagStyle('#60a5fa', 'rgba(96,165,250,0.1)'), fontSize: 12, padding: '6px 12px'}}>
+                    🏔️ {selectedRecord.habitat}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       </View>
     </View>
   );
