@@ -284,7 +284,7 @@ export default function Map({
       if (!isNaN(lat) && !isNaN(lng)) {
         mapRef.current?.animateToRegion(
           {
-            latitude: lat + 0.012,  // ligeramente arriba para que la tarjeta no tape el pin
+            latitude: lat,
             longitude: lng,
             latitudeDelta: 0.035,
             longitudeDelta: 0.035,

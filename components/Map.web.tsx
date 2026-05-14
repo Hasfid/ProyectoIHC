@@ -389,6 +389,7 @@ export default function MapWeb({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const geoWatchRef = React.useRef<number | null>(null);
+  const lastFlownClickTime = React.useRef<number | null>(null);
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
@@ -576,7 +577,6 @@ export default function MapWeb({
    * Solo vuela UNA vez por clic único (tracked via _clickTime);
    * pulsar el botón de ayuda u otras re-renders NO vuelven a disparar el vuelo.
    */
-  const lastFlownClickTime = React.useRef<number | null>(null);
   const FlyToRecord = ({ record, useMap: useMapHook }: { record: any, useMap: any }) => {
     const map = useMapHook();
     useEffect(() => {
@@ -584,7 +584,8 @@ export default function MapWeb({
       const clickTime: number = record._clickTime ?? 0;
       if (clickTime === lastFlownClickTime.current) return; // ya voló en este clic
       lastFlownClickTime.current = clickTime;
-      map.flyTo([record._renderLat + 0.012, record._renderLng], 16, { duration: 1.2 });
+      // Usamos zoom 15 (maxZoom) y centramos exactamente
+      map.flyTo([record._renderLat, record._renderLng], 15, { duration: 1.2 });
     }, [record, map]);
     return null;
   };
@@ -864,22 +865,22 @@ export default function MapWeb({
       {/* ── Panel lateral de información del registro ── */}
       {selectedRecord && (
         <div style={{
-          position: 'absolute',
+          position: 'fixed',
           top: 0,
           right: 0,
           bottom: 0,
           width: 320,
           background: isDark
-            ? 'rgba(10,18,14,0.92)'
-            : 'rgba(255,255,255,0.94)',
+            ? 'rgba(0,0,0,0.85)'
+            : 'rgba(255,255,255,0.95)',
           backdropFilter: 'blur(20px)',
           WebkitBackdropFilter: 'blur(20px)',
-          borderLeft: `1px solid ${isDark ? 'rgba(52,211,153,0.25)' : 'rgba(0,0,0,0.1)'}`,
+          borderLeft: `1px solid ${isDark ? 'rgba(52,211,153,0.3)' : 'rgba(0,0,0,0.1)'}`,
           zIndex: 9999,
           display: 'flex',
           flexDirection: 'column',
           boxShadow: isDark
-            ? '-8px 0 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(52,211,153,0.08)'
+            ? '-8px 0 40px rgba(0,0,0,0.7)'
             : '-8px 0 40px rgba(0,0,0,0.15)',
           overflowY: 'auto',
         }}>
@@ -935,7 +936,7 @@ export default function MapWeb({
           <div style={{ padding: '20px' }}>
             {/* Nombre */}
             <div style={{
-              color: isDark ? '#fff' : '#111',
+              color: theme.text,
               fontSize: 20,
               fontWeight: 700,
               marginBottom: 4,
@@ -961,7 +962,7 @@ export default function MapWeb({
             {/* Descripción */}
             {selectedRecord.descripcion && (
               <div style={{
-                color: isDark ? '#9ca3af' : '#4b5563',
+                color: theme.subtext,
                 fontSize: 14,
                 lineHeight: '1.6',
                 marginBottom: 20,
