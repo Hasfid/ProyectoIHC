@@ -112,6 +112,7 @@ export default function Map({
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const mapRef = useRef<MapView>(null);
   const locationSubRef = useRef<Location.LocationSubscription | null>(null);
+  const lastAnimatedId = useRef<string | null>(null);
   const { theme } = useTheme();
   const isDark = theme.mode === 'dark';
 
@@ -275,9 +276,29 @@ export default function Map({
 
   const handleMarkerPress = (record: any) => {
     setSelected(record);
+    // Solo animar si este registro es diferente al último animado
+    if (lastAnimatedId.current !== record.id) {
+      lastAnimatedId.current = record.id;
+      const lat = record._renderLat ?? parseFloat(record.latitud);
+      const lng = record._renderLng ?? parseFloat(record.longitud);
+      if (!isNaN(lat) && !isNaN(lng)) {
+        mapRef.current?.animateToRegion(
+          {
+            latitude: lat + 0.012,  // ligeramente arriba para que la tarjeta no tape el pin
+            longitude: lng,
+            latitudeDelta: 0.035,
+            longitudeDelta: 0.035,
+          },
+          900
+        );
+      }
+    }
   };
 
-  const closeCard = () => setSelected(null);
+  const closeCard = () => {
+    setSelected(null);
+    lastAnimatedId.current = null; // resetear para que al volver a tocar el mismo pin se haga flyTo
+  };
 
   return (
     <View style={StyleSheet.absoluteFill}>

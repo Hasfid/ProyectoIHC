@@ -59,6 +59,7 @@ export default function CreateRecordScreen() {
   const [saved, setSaved] = useState(false);
   const [locLoading, setLocLoading] = useState(false);
   const [description, setDescription] = useState('');
+  const isSavingRef = React.useRef(false); // guard para evitar doble envio
 
 
   const pickMedia = async (nextStep: Step = 'map') => {
@@ -117,6 +118,7 @@ export default function CreateRecordScreen() {
 
 
   const confirmAndSave = async () => {
+    if (isSavingRef.current) return; // evitar doble envio
     const loc = coords ?? { lat: 5.0, lng: -63.5 };
 
     if (!isPointInPolygon({ latitude: loc.lat, longitude: loc.lng }, GUAYANA_POLYGON)) {
@@ -126,11 +128,12 @@ export default function CreateRecordScreen() {
       );
     }
 
+    isSavingRef.current = true;
     setSaving(true);
     try {
       await saveDraft({
         status: fromScanner ? 'pending_upload' : 'pending_ai',
-        nombre_tradicional: fromScanner ? params.nombreTradicional! : i18n.t('scanner.analyzingSpecies'),
+        nombre_tradicional: fromScanner ? params.nombreTradicional! : 'Analyzing species...',
         nombre_cientifico: '',
         peligrosidad: '',
         alimentacion: '',
@@ -149,6 +152,7 @@ export default function CreateRecordScreen() {
     } catch {
       Alert.alert('Error', 'No se pudo guardar el registro.');
       setSaving(false);
+      isSavingRef.current = false;
     }
   };
 

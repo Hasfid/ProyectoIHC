@@ -571,13 +571,20 @@ export default function MapWeb({
     return null;
   };
 
-  /** Componente para hacer zoom dinámico al tocar un registro */
-  const FlyToRecord = ({ record, useMap }: { record: any, useMap: any }) => {
-    const map = useMap();
+  /**
+   * Componente para hacer zoom dinámico al tocar un registro.
+   * Solo vuela UNA vez por clic único (tracked via _clickTime);
+   * pulsar el botón de ayuda u otras re-renders NO vuelven a disparar el vuelo.
+   */
+  const lastFlownClickTime = React.useRef<number | null>(null);
+  const FlyToRecord = ({ record, useMap: useMapHook }: { record: any, useMap: any }) => {
+    const map = useMapHook();
     useEffect(() => {
-      if (record && record._renderLat != null && record._renderLng != null) {
-        map.flyTo([record._renderLat, record._renderLng], 16, { duration: 1.2 });
-      }
+      if (!record || record._renderLat == null || record._renderLng == null) return;
+      const clickTime: number = record._clickTime ?? 0;
+      if (clickTime === lastFlownClickTime.current) return; // ya voló en este clic
+      lastFlownClickTime.current = clickTime;
+      map.flyTo([record._renderLat + 0.012, record._renderLng], 16, { duration: 1.2 });
     }, [record, map]);
     return null;
   };
@@ -854,7 +861,7 @@ export default function MapWeb({
           </div>
         )}
       </div>
-      {/* ── Barra Lateral de Registro (reemplazo del Popup) ── */}
+      {/* ── Panel lateral de información del registro ── */}
       {selectedRecord && (
         <div style={{
           position: 'absolute',
@@ -862,12 +869,18 @@ export default function MapWeb({
           right: 0,
           bottom: 0,
           width: 320,
-          backgroundColor: isDark ? '#111924' : '#fff',
-          borderLeft: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-          zIndex: 1001,
+          background: isDark
+            ? 'rgba(10,18,14,0.92)'
+            : 'rgba(255,255,255,0.94)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
+          borderLeft: `1px solid ${isDark ? 'rgba(52,211,153,0.25)' : 'rgba(0,0,0,0.1)'}`,
+          zIndex: 9999,
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: '-4px 0 15px rgba(0,0,0,0.15)',
+          boxShadow: isDark
+            ? '-8px 0 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(52,211,153,0.08)'
+            : '-8px 0 40px rgba(0,0,0,0.15)',
           overflowY: 'auto',
         }}>
           {/* Botón Cerrar */}
@@ -875,14 +888,15 @@ export default function MapWeb({
             <button
               onClick={() => setSelectedRecord(null)}
               style={{
-                background: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.8)',
-                border: 'none',
+                background: isDark ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.85)',
+                border: `1px solid ${isDark ? 'rgba(52,211,153,0.4)' : 'rgba(0,0,0,0.1)'}`,
                 width: 32, height: 32,
                 borderRadius: 16,
                 cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: isDark ? '#fff' : '#000',
-                fontSize: 18,
+                color: '#34d399',
+                fontSize: 16,
+                backdropFilter: 'blur(8px)',
               }}
             >
               ✕
