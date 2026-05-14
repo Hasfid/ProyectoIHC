@@ -248,7 +248,10 @@ const uploadDraft = async (draft: DraftRecord, userId: string): Promise<boolean>
       latitud: draft.latitud,
       longitud: draft.longitud,
       ia_certeza: draft.ia_certeza,
-      metadatos_especie: draft.metadatos_especie || { sync: 'offline' },
+      metadatos_especie: {
+        ...(draft.metadatos_especie || { sync: 'offline' }),
+        endemismo: draft.endemismo
+      },
     });
 
     if (error) throw error;
