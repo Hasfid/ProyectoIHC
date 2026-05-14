@@ -98,6 +98,8 @@ export default function CreateRecordScreen() {
 
 
   const confirmAndSave = async () => {
+    // Prevenir registros duplicados por doble tap
+    if (saving || saved) return;
     const loc = coords ?? { lat: 5.0, lng: -63.5 };
 
     if (!isPointInPolygon({ latitude: loc.lat, longitude: loc.lng }, GUAYANA_POLYGON)) {

@@ -64,7 +64,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
 
       <View style={webStyles.centerContainer}>
         {state.routes.map((route: any, index: number) => {
-          if (route.name === 'profile' || route.name === 'scanner') return null;
+          if (route.name === 'profile') return null;
 
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -145,7 +145,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
               ]}
               onPress={() => { setMenuOpen(false); navigation.navigate('profile'); }}
             >
-              <Ionicons name="person" size={isSmallScreen ? 18 : 22} color="#000" />
+              <Ionicons name="person" size={isSmallScreen ? 18 : 22} color={theme.text} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setMenuOpen(!menuOpen)}
@@ -441,14 +441,7 @@ export default function TabLayout() {
         options={{
           title: i18n.t('tabs.discover'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <View>
-              <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />
-              {unreadMessages > 0 && (
-                <View style={{ position: 'absolute', top: -2, right: -6, backgroundColor: '#1565c0', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
-                  <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
-                </View>
-              )}
-            </View>
+            <Ionicons name={focused ? "compass" : "compass-outline"} size={24} color={color} />
           ),
         }}
       />
@@ -478,14 +471,7 @@ export default function TabLayout() {
         options={{
           title: i18n.t('tabs.profile'),
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <View>
-              <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />
-              {unreadCount > 0 && Platform.OS !== 'web' && (
-                <View style={{ position: 'absolute', top: -2, right: -6, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
-                  <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                </View>
-              )}
-            </View>
+            <Ionicons name={focused ? "person" : "person-outline"} size={24} color={color} />
           ),
         }}
       />

@@ -119,7 +119,7 @@ export default function Scanner() {
   // ── Confirmar y guardar borrador ──────────────────────────────────────────
 
   const handleConfirmUpload = async () => {
-    if (!previewUri) return;
+    if (!previewUri || phase === 'saving' || phase === 'saved') return;
 
     try {
       setPhase('saving');

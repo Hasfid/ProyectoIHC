@@ -14,7 +14,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { supabase } from '../lib/supabase';
 import { useTheme } from '../lib/theme';
 
@@ -311,6 +311,13 @@ if (typeof document !== 'undefined' && !document.getElementById(LEAFLET_CSS_ID))
       0%, 100% { transform: scale(1); opacity: 1; }
       50% { transform: scale(1.3); opacity: 0.7; }
     }
+
+    /* ── Reset zoom button ── */
+    .ecos-reset-zoom {
+      position: absolute;
+      pointer-events: auto;
+      z-index: 1001;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -367,11 +374,13 @@ export default function MapWeb({
   onRegionChangeComplete,
   registrationLayout = false,
   initialRegion,
+  onMarkerSelect,
 }: {
   onRegionChangeComplete?: (region: any) => void;
   /** En flujo crear registro (web): barra de búsqueda abajo, junto a la zona de confirmación */
   registrationLayout?: boolean;
   initialRegion?: any;
+  onMarkerSelect?: (record: any | null) => void;
 }) {
   const [MapComponents, setMapComponents] = useState<any>(null);
   const [records, setRecords] = useState<any[]>([]);
@@ -388,6 +397,7 @@ export default function MapWeb({
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const searchTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const geoWatchRef = React.useRef<number | null>(null);
+  const mapInstanceRef = React.useRef<any>(null);
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
@@ -531,8 +541,8 @@ export default function MapWeb({
 
   if (!MapComponents || !cssReady) {
     return (
-      <View style={styles.container}>
-        <View style={styles.loadingOverlay}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <View style={[styles.loadingOverlay, { backgroundColor: theme.background }]}>
           {/* Pantalla de carga minimalista */}
         </View>
       </View>
@@ -556,7 +566,16 @@ export default function MapWeb({
         const zoom = map.getZoom();
         setShowGuayanaLabel(zoom <= 8.5);
       },
+      click: () => {
+        // Cerrar panel lateral al tocar el mapa
+        if (onMarkerSelect) {
+          onMarkerSelect(null);
+        }
+      },
     });
+
+    // Guardar referencia al mapa para flyTo
+    mapInstanceRef.current = map;
 
     useEffect(() => {
       if (map) {
@@ -575,8 +594,7 @@ export default function MapWeb({
    * - Etiqueta del nombre debajo con efecto cristal
    */
   const createCustomIcon = (imageUrl: string, name: string) => {
-    const displayName = (name || 'Especie').toUpperCase();
-    const fallbackBg = !imageUrl ? 'background:#1a2e1a;' : '';
+    const fallbackBg = !imageUrl ? '#1a2e1a' : '#000';
 
     return L.divIcon({
       className: 'custom-pin-icon',
@@ -585,21 +603,18 @@ export default function MapWeb({
           display: flex;
           flex-direction: column;
           align-items: center;
-          gap: 6px;
         ">
           <!-- Círculo principal -->
           <div style="
-            width: 64px;
-            height: 64px;
+            width: 50px;
+            height: 50px;
             border-radius: 50%;
-            border: 4px solid white;
+            border: 3px solid white;
             overflow: hidden;
-            ${fallbackBg}
-            background-color: ${!imageUrl ? '#1a2e1a' : '#000'};
+            background-color: ${fallbackBg};
             box-shadow:
-              0 20px 60px rgba(0,0,0,0.7),
-              0 0 0 2px rgba(52,211,153,0.4),
-              0 0 20px rgba(52,211,153,0.2);
+              0 4px 12px rgba(0,0,0,0.5),
+              0 0 0 1px rgba(52,211,153,0.3);
           ">
             ${imageUrl
           ? `<img
@@ -607,48 +622,36 @@ export default function MapWeb({
                   style="width:100%;height:100%;object-fit:cover;display:block;"
                   onerror="this.parentElement.style.background='#1a2e1a'"
                 />`
-          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:24px;">🌿</div>`
+          : `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:22px;">🌿</div>`
         }
           </div>
-
-          <!-- Etiqueta glassmorphism -->
+          <!-- Punta de chincheta -->
           <div style="
-            background: rgba(0,0,0,0.5);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.2);
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 9px;
-            font-weight: 700;
-            color: white;
-            letter-spacing: 1.5px;
-            font-family: ui-monospace, monospace;
-            white-space: nowrap;
-            max-width: 120px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-          ">
-            ${displayName}
-          </div>
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 14px solid white;
+            margin-top: -2px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+          "></div>
         </div>
       `,
-      iconSize: [64, 100],
-      iconAnchor: [32, 50],
-      popupAnchor: [0, -54],
+      iconSize: [56, 68],
+      iconAnchor: [28, 68],
+      popupAnchor: [0, -68],
     });
   };
 
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={{ flex: 1, position: 'relative', borderRadius: 16, overflow: 'hidden' }}>
         <MapContainer
           className={registrationLayout ? 'ecos-map-registration' : undefined}
         center={initialRegion ? [initialRegion.latitude, initialRegion.longitude] : MAP_CENTER_START}
         zoom={initialRegion ? Math.max(5, Math.min(15, Math.round(Math.log2(360 / initialRegion.latitudeDelta)))) : MAP_ZOOM_START}
-        maxZoom={15}
+        maxZoom={19}
         minZoom={3}
         style={{ height: '100%', width: '100%', zIndex: 0 }}
         scrollWheelZoom={true}
@@ -670,14 +673,14 @@ export default function MapWeb({
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
           attribution="Tiles © Esri — Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community"
           maxNativeZoom={15}
-          maxZoom={15}
+          maxZoom={19}
         />
 
         {/* Capas de etiquetas para caminos y nombres */}
         <TileLayer
           url="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"
           maxNativeZoom={15}
-          maxZoom={15}
+          maxZoom={19}
           pane="overlayPane"
         />
 
@@ -743,6 +746,26 @@ export default function MapWeb({
           const lat = record._renderLat;
           const lng = record._renderLng;
           if (lat == null || lng == null) return null;
+
+          // Si hay callback onMarkerSelect, no mostrar popup sino llamar al padre
+          if (onMarkerSelect) {
+            return (
+              <Marker
+                key={record.id}
+                position={[lat, lng]}
+                icon={createCustomIcon(record.media_url, record.nombre_tradicional)}
+                eventHandlers={{
+                  click: () => {
+                    // Zoom hacia el marcador
+                    if (mapInstanceRef.current) {
+                      mapInstanceRef.current.flyTo([lat, lng], 17, { animate: true, duration: 0.8 });
+                    }
+                    onMarkerSelect(record);
+                  },
+                }}
+              />
+            );
+          }
 
           return (
             <Marker
@@ -939,6 +962,24 @@ export default function MapWeb({
           </div>
         )}
       </div>
+
+
+      {/* ── Botón de alejarse / reset zoom ── */}
+      {!registrationLayout && (
+        <View style={styles.resetZoomContainer}>
+          <TouchableOpacity
+            style={[styles.resetZoomBtn, { backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.85)' }]}
+            onPress={() => {
+              if (mapInstanceRef.current) {
+                mapInstanceRef.current.flyTo(MAP_CENTER_START, MAP_ZOOM_START, { animate: true, duration: 1.5 });
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="contract-outline" size={22} color="#34d399" />
+          </TouchableOpacity>
+        </View>
+      )}
       </View>
     </View>
   );
@@ -1041,5 +1082,25 @@ const styles = StyleSheet.create({
   loadingOverlay: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  resetZoomContainer: {
+    position: 'absolute',
+    bottom: 36,
+    left: 56,
+    zIndex: 1001,
+  },
+  resetZoomBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(52,211,153,0.3)',
   },
 });

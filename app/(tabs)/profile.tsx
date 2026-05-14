@@ -13,6 +13,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -64,6 +65,7 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [currentLocale, setCurrentLocale] = useState(i18n.locale);
   const [candidateCounts, setCandidateCounts] = useState<Record<string, number>>({});
@@ -157,6 +159,40 @@ export default function ProfileScreen() {
     return () => {
       cleanup.then(clean => clean && clean());
     };
+  }, []);
+
+  // Contador de mensajes no leídos
+  const fetchUnreadMessages = async () => {
+    try {
+      const { data: { session: s } } = await supabase.auth.getSession();
+      if (!s) return;
+      const uid = s.user.id;
+      const { data: messages, error } = await supabase
+        .from('mensajes')
+        .select('id, remitente_id, created_at')
+        .eq('destinatario_id', uid)
+        .order('created_at', { ascending: false });
+      if (error || !messages) return;
+      const lastReadRaw = await AsyncStorage.getItem(`last_read_${uid}`);
+      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
+      let total = 0;
+      messages.forEach(msg => {
+        const senderId = msg.remitente_id;
+        const lastReadTime = lastRead[senderId];
+        if (!lastReadTime || new Date(msg.created_at) > new Date(lastReadTime)) {
+          total++;
+        }
+      });
+      setUnreadMessages(total);
+    } catch (err) {
+      console.error('fetchUnreadMessages (profile):', err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUnreadMessages();
+    const interval = setInterval(fetchUnreadMessages, 10_000);
+    return () => clearInterval(interval);
   }, []);
 
   // Estados de edición
@@ -839,10 +875,20 @@ export default function ProfileScreen() {
           <View style={styles.headerActions}>
             <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/notifications')}>
               <View>
-                <Ionicons name="notifications-outline" size={28} color={theme.text} />
+                <Ionicons name="notifications-outline" size={26} color={theme.text} />
                 {unreadCount > 0 && (
                   <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#e53935', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
                     <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuButton} onPress={() => router.push('/chat')}>
+              <View>
+                <Ionicons name="chatbubble-outline" size={24} color={theme.text} />
+                {unreadMessages > 0 && (
+                  <View style={{ position: 'absolute', top: -2, right: -4, backgroundColor: '#1565c0', borderRadius: 10, minWidth: 16, height: 16, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 2 }}>
+                    <Text style={{ color: 'white', fontSize: 9, fontWeight: 'bold' }}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
                   </View>
                 )}
               </View>
@@ -998,16 +1044,21 @@ export default function ProfileScreen() {
                   </View>
                 ) : (
                   <View style={styles.gridContainer}>
-                    {filteredRecords.map((record) => (
-                      <TouchableOpacity
-                        key={record.id}
-                        style={styles.gridItem}
-                        onPress={() => { setSelectedRecord(record); setExpandedRecordDesc(false); }}
-                        activeOpacity={0.8}
-                      >
-                        <Image source={{ uri: record.media_url }} style={styles.gridImage} />
-                      </TouchableOpacity>
-                    ))}
+                    {filteredRecords.map((record) => {
+                      const screenW = Dimensions.get('window').width;
+                      const cols = Platform.OS === 'web' && screenW > 768 ? Math.min(Math.floor(screenW / 200), 5) : 3;
+                      const itemSize = Platform.OS === 'web' && screenW > 768 ? screenW / cols : width / 3;
+                      return (
+                        <TouchableOpacity
+                          key={record.id}
+                          style={[styles.gridItem, { width: itemSize, height: itemSize }]}
+                          onPress={() => { setSelectedRecord(record); setExpandedRecordDesc(false); }}
+                          activeOpacity={0.8}
+                        >
+                          <Image source={{ uri: record.media_url }} style={styles.gridImage} />
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
               </>
@@ -1056,7 +1107,7 @@ export default function ProfileScreen() {
                         <Text style={[styles.draftDate, { color: theme.subtext }] }>
                           {new Date(draft.created_at).toLocaleDateString('es-VE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
                         </Text>
-                        {(draft.status === 'rejected' || (draft.status === 'pending_ai' && draft.last_error)) && draft.last_error ? (
+                        {(draft.status === 'rejected' || ((draft.status === 'pending_ai' || draft.status === 'pending_upload') && draft.last_error)) && draft.last_error ? (
                           <Text style={{ fontSize: 11, color: theme.error, marginTop: 4, fontWeight: 'bold' }} numberOfLines={3}>
                             {draft.last_error}
                           </Text>
@@ -1201,7 +1252,7 @@ export default function ProfileScreen() {
         >
           <View style={styles.recordModalOverlay}>
             {selectedRecord && (
-              <View style={styles.recordModalContent}>
+              <View style={[styles.recordModalContent, { backgroundColor: theme.card }]}>
                 <ScrollView showsVerticalScrollIndicator={false}>
                   <Image source={{ uri: selectedRecord.media_url }} style={styles.recordModalImage} />
                   <TouchableOpacity
@@ -1214,23 +1265,23 @@ export default function ProfileScreen() {
                     {/* Descripción editable únicamente */}
                     {editingRecord?.id === selectedRecord.id ? (
                       <View style={{ marginVertical: 8 }}>
-                        <Text style={styles.label}>Editar Descripción</Text>
+                        <Text style={[styles.label, { color: theme.subtext }]}>Editar Descripción</Text>
                         <TextInput
-                          style={[styles.editRecordInput, { height: 100 }]}
+                          style={[styles.editRecordInput, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
                           value={editRecordDesc}
                           onChangeText={setEditRecordDesc}
                           multiline
                           numberOfLines={4}
                           placeholder="Escribe una descripción..."
-                          placeholderTextColor="#999"
+                          placeholderTextColor={theme.placeholder}
                         />
                         
                         <View style={styles.editRecordActions}>
                           <TouchableOpacity
-                            style={styles.editRecordCancelBtn}
+                            style={[styles.editRecordCancelBtn, { backgroundColor: theme.inputBackground }]}
                             onPress={() => setEditingRecord(null)}
                           >
-                            <Text style={styles.editRecordCancelText}>Cancelar</Text>
+                            <Text style={[styles.editRecordCancelText, { color: theme.subtext }]}>Cancelar</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.editRecordSaveBtn}
@@ -1242,29 +1293,35 @@ export default function ProfileScreen() {
                       </View>
                     ) : (
                       <>
-                        <Text style={styles.recordModalTitle}>{selectedRecord.nombre_tradicional}</Text>
+                        <Text style={[styles.recordModalTitle, { color: theme.text }]}>{selectedRecord.nombre_tradicional}</Text>
                         {selectedRecord.nombre_cientifico ? (
-                          <Text style={styles.recordModalScientific}>{selectedRecord.nombre_cientifico}</Text>
+                          <Text style={[styles.recordModalScientific, { color: theme.primary }]}>{selectedRecord.nombre_cientifico}</Text>
                         ) : null}
-                        <TouchableOpacity onPress={() => setExpandedRecordDesc(!expandedRecordDesc)} activeOpacity={0.8}>
-                          <Text style={styles.recordModalDesc} numberOfLines={expandedRecordDesc ? undefined : 2}>
-                            {selectedRecord.descripcion || 'Sin descripción'}
-                          </Text>
-                        </TouchableOpacity>
+                        {selectedRecord.descripcion ? (
+                          <TouchableOpacity onPress={() => setExpandedRecordDesc(!expandedRecordDesc)} activeOpacity={0.8}>
+                            <Text style={[styles.recordModalDesc, { color: theme.subtext }]} numberOfLines={expandedRecordDesc ? undefined : 2}>
+                              {selectedRecord.descripcion}
+                            </Text>
+                          </TouchableOpacity>
+                        ) : null}
 
                         {/* Enriquecimiento IA */}
                         {loadingEnrichedData ? (
-                          <ActivityIndicator color="#2e7d32" style={{ marginVertical: 20 }} />
+                          <ActivityIndicator color={theme.primary} style={{ marginVertical: 20 }} />
                         ) : enrichedData ? (
-                          <View style={styles.enrichedSection}>
-                            <View style={styles.enrichedCard}>
-                              <Text style={styles.enrichedTitle}>Información Biológica</Text>
-                              <Text style={styles.enrichedText}>{enrichedData.descripcion_biologica}</Text>
-                            </View>
-                            <View style={styles.enrichedCard}>
-                              <Text style={styles.enrichedTitle}>Mitos y Leyendas</Text>
-                              <Text style={styles.enrichedText}>{enrichedData.mitos}</Text>
-                            </View>
+                          <View style={{ marginTop: 10, gap: 12 }}>
+                            {enrichedData.descripcion_biologica ? (
+                              <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                                <Text style={[styles.enrichedTitle, { color: theme.primary }]}>Información Biológica</Text>
+                                <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.descripcion_biologica}</Text>
+                              </View>
+                            ) : null}
+                            {enrichedData.mitos ? (
+                              <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                                <Text style={[styles.enrichedTitle, { color: '#ff9100' }]}>Mitos y Leyendas</Text>
+                                <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.mitos}</Text>
+                              </View>
+                            ) : null}
                           </View>
                         ) : null}
 
@@ -1483,7 +1540,7 @@ export default function ProfileScreen() {
                 <Text style={{ color: previewDraft?.status === 'rejected' ? '#ef9a9a' : '#a5d6a7', fontSize: 12, marginTop: 4, fontWeight: '600' }}>
                   {previewDraft?.status === 'rejected' ? i18n.t('common.rejected') : previewDraft?.status === 'pending_ai' ? i18n.t('common.connectingAI') : previewDraft?.status === 'pending_selection' ? i18n.t('common.pendingConfirm') : i18n.t('common.pendingUpload')}
                 </Text>
-                {(previewDraft?.status === 'rejected' || (previewDraft?.status === 'pending_ai' && previewDraft?.last_error)) && previewDraft?.last_error ? (
+                {(previewDraft?.status === 'rejected' || ((previewDraft?.status === 'pending_ai' || previewDraft?.status === 'pending_upload') && previewDraft?.last_error)) && previewDraft?.last_error ? (
                   <Text style={{ color: '#ef9a9a', fontSize: 11, marginTop: 4 }} numberOfLines={2}>{previewDraft.last_error}</Text>
                 ) : null}
                 {previewDraft?.status === 'rejected' ? (
@@ -1628,8 +1685,12 @@ const styles = StyleSheet.create({
   },
   recordModalImage: {
     width: '100%',
-    height: 350,
-    resizeMode: 'cover',
+    height: undefined,
+    minHeight: 250,
+    maxHeight: 450,
+    aspectRatio: 1,
+    resizeMode: 'contain',
+    backgroundColor: '#000',
   },
   recordModalClose: {
     position: 'absolute',

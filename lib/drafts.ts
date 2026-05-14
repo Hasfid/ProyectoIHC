@@ -241,7 +241,7 @@ const uploadDraft = async (draft: DraftRecord, userId: string): Promise<boolean>
       nombre_tradicional: draft.nombre_tradicional,
       nombre_cientifico: draft.nombre_cientifico,
       peligrosidad: draft.peligrosidad,
-      alimentacion: draft.endemismo,
+      alimentacion: draft.alimentacion,
       descripcion: draft.descripcion,
       media_url: mediaUrl,
       tipo_media: draft.tipo_media,

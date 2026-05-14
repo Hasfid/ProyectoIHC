@@ -15,11 +15,14 @@ import {
     Alert,
     Dimensions,
     Image,
+    Modal,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
+    useWindowDimensions,
     View,
 } from 'react-native';
 import { checkIsFollowing, followUser, unfollowUser } from '../lib/follows';
@@ -66,6 +69,57 @@ export default function UserProfileScreen() {
   
   /** Pestaña activa en la sección de contenido inferior */
   const [activeTab, setActiveTab] = useState<'records' | 'community'>('records');
+
+  // --- Record detail states ---
+  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
+  const [enrichedData, setEnrichedData] = useState<any>(null);
+  const [loadingEnrichedData, setLoadingEnrichedData] = useState(false);
+  const [filter, setFilter] = useState<'Todos' | 'Animales' | 'Plantas'>('Todos');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [expandedRecordDesc, setExpandedRecordDesc] = useState(false);
+  const { width: screenWidth } = useWindowDimensions();
+
+  const isAnimal = (item: any) => {
+    const alimentacion = (item.alimentacion || '').toLowerCase();
+    if (alimentacion.includes('carnívoro') || alimentacion.includes('herbívoro') || alimentacion.includes('omnívoro')) return true;
+    const nombre = (item.nombre_tradicional || '').toLowerCase();
+    const nombreC = (item.nombre_cientifico || '').toLowerCase();
+    if (nombre.includes('orquídea') || nombre.includes('flor') || nombre.includes('árbol') || nombre.includes('planta') || nombre.includes('helecho') || nombreC.includes('sp.')) return false;
+    return true;
+  };
+
+  const filteredRecords = userRecords.filter(item => {
+    const matchesSearch = (item.nombre_tradicional || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          (item.nombre_cientifico || '').toLowerCase().includes(searchQuery.toLowerCase());
+    if (!matchesSearch) return false;
+    if (filter === 'Todos') return true;
+    const isAnim = isAnimal(item);
+    if (filter === 'Animales') return isAnim;
+    if (filter === 'Plantas') return !isAnim;
+    return true;
+  });
+
+  const getEnrichedData = async (item: any) => {
+    if (item.metadatos_especie?.descripcion_biologica) {
+      return {
+        descripcion_biologica: item.metadatos_especie.descripcion_biologica,
+        mitos: item.metadatos_especie.mitos || '',
+      };
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    if (selectedRecord) {
+      setLoadingEnrichedData(true);
+      getEnrichedData(selectedRecord).then((data) => {
+        setEnrichedData(data);
+        setLoadingEnrichedData(false);
+      });
+    } else {
+      setEnrichedData(null);
+    }
+  }, [selectedRecord]);
 
   // --- Like / Comment state ---
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
@@ -376,20 +430,66 @@ export default function UserProfileScreen() {
 
         {/* Tab Content */}
         {activeTab === 'records' && (
-          userRecords.length === 0 ? (
-            <View style={{ alignItems: 'center', padding: 40 }}>
-              <Ionicons name="leaf-outline" size={48} color={theme.muted} />
-              <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('profile.noRecords')}</Text>
+          <>
+            {/* Search + Filter */}
+            <View style={{ paddingHorizontal: 20, marginTop: 10 }}>
+              <View style={[styles.searchBar, { backgroundColor: theme.inputBackground, borderColor: theme.border, borderWidth: 1 }]}>
+                <Ionicons name="search" size={20} color={theme.muted} />
+                <TextInput
+                  style={[styles.searchInput, { color: theme.text }]}
+                  placeholder={i18n.t('profile.searchRecords')}
+                  placeholderTextColor={theme.placeholder}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')}>
+                    <Ionicons name="close-circle" size={20} color={theme.muted} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          ) : (
-            <View style={styles.gridContainer}>
-              {userRecords.map((record) => (
-                <View key={record.id} style={styles.gridItem}>
-                  <Image source={{ uri: record.media_url || 'https://via.placeholder.com/150' }} style={styles.gridImage} />
-                </View>
+
+            <View style={styles.filterRow}>
+              {[{ key: 'Todos', label: i18n.t('common.all') }, { key: 'Animales', label: i18n.t('common.animals') }, { key: 'Plantas', label: i18n.t('common.plants') }].map((f: any) => (
+                <TouchableOpacity
+                  key={f.key}
+                  onPress={() => setFilter(f.key)}
+                  style={[
+                    styles.filterChip,
+                    { backgroundColor: theme.inputBackground, borderColor: theme.border },
+                    filter === f.key && { backgroundColor: theme.primary, borderColor: theme.primary },
+                  ]}
+                >
+                  <Text style={[styles.filterText, { color: filter === f.key ? theme.background : theme.text }, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
               ))}
             </View>
-          )
+
+            {filteredRecords.length === 0 ? (
+              <View style={{ alignItems: 'center', padding: 40 }}>
+                <Ionicons name="leaf-outline" size={48} color={theme.muted} />
+                <Text style={[styles.emptyText, { color: theme.muted }]}>{i18n.t('profile.noRecords')}</Text>
+              </View>
+            ) : (
+              <View style={styles.gridContainer}>
+                {filteredRecords.map((record) => {
+                  const cols = Platform.OS === 'web' && screenWidth > 768 ? Math.min(Math.floor(screenWidth / 200), 5) : 3;
+                  const itemSize = Platform.OS === 'web' && screenWidth > 768 ? screenWidth / cols : width / 3;
+                  return (
+                    <TouchableOpacity
+                      key={record.id}
+                      style={[styles.gridItem, { width: itemSize, height: itemSize }]}
+                      onPress={() => { setSelectedRecord(record); setExpandedRecordDesc(false); }}
+                      activeOpacity={0.8}
+                    >
+                      <Image source={{ uri: record.media_url || 'https://via.placeholder.com/150' }} style={styles.gridImage} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </>
         )}
 
         {activeTab === 'community' && (
@@ -405,7 +505,9 @@ export default function UserProfileScreen() {
                   <View style={styles.postCardHeader}>
                     <Text style={[styles.postCardTitle, { color: theme.text }]}>{post.titulo}</Text>
                   </View>
-                  <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  {post.descripcion ? (
+                    <Text style={[styles.postCardDesc, { color: theme.subtext }]}>{post.descripcion}</Text>
+                  ) : null}
                   <Text style={[styles.postCardDate, { color: theme.muted }]}>
                     {new Date(post.created_at).toLocaleDateString('es-VE')}
                   </Text>
@@ -465,6 +567,65 @@ export default function UserProfileScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Modal de detalle del registro (idéntico a profile.tsx, sin editar/eliminar) */}
+      <Modal
+        visible={!!selectedRecord}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => { setSelectedRecord(null); setExpandedRecordDesc(false); }}
+      >
+        <View style={styles.recordModalOverlay}>
+          {selectedRecord && (
+            <View style={[styles.recordModalContent, { backgroundColor: theme.card }]}>
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <Image source={{ uri: selectedRecord.media_url }} style={styles.recordModalImage} />
+                <TouchableOpacity
+                  style={styles.recordModalClose}
+                  onPress={() => { setSelectedRecord(null); setExpandedRecordDesc(false); }}
+                >
+                  <Ionicons name="close" size={24} color="#fff" />
+                </TouchableOpacity>
+                <View style={styles.recordModalBody}>
+                  <Text style={[styles.recordModalTitle, { color: theme.text }]}>{selectedRecord.nombre_tradicional}</Text>
+                  {selectedRecord.nombre_cientifico ? (
+                    <Text style={[styles.recordModalScientific, { color: theme.primary }]}>{selectedRecord.nombre_cientifico}</Text>
+                  ) : null}
+
+                  {/* Descripción - solo si existe */}
+                  {selectedRecord.descripcion ? (
+                    <TouchableOpacity onPress={() => setExpandedRecordDesc(!expandedRecordDesc)} activeOpacity={0.8}>
+                      <Text style={[styles.recordModalDesc, { color: theme.subtext }]} numberOfLines={expandedRecordDesc ? undefined : 2}>
+                        {selectedRecord.descripcion}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {/* Enriquecimiento IA - solo si hay datos reales */}
+                  {loadingEnrichedData ? (
+                    <ActivityIndicator color={theme.primary} style={{ marginVertical: 20 }} />
+                  ) : enrichedData ? (
+                    <View style={{ marginTop: 10, gap: 12 }}>
+                      {enrichedData.descripcion_biologica ? (
+                        <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                          <Text style={[styles.enrichedTitle, { color: theme.primary }]}>Información Biológica</Text>
+                          <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.descripcion_biologica}</Text>
+                        </View>
+                      ) : null}
+                      {enrichedData.mitos ? (
+                        <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                          <Text style={[styles.enrichedTitle, { color: '#ff9100' }]}>Mitos y Leyendas</Text>
+                          <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.mitos}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  ) : null}
+                </View>
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -619,21 +780,152 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#f0f0f0'
   },
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    height: 42,
+    borderRadius: 12,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+    marginTop: 10,
+  },
+  filterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  filterText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  filterTextActive: {
+    fontWeight: 'bold',
+  },
+  recordModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.9)',
+    justifyContent: 'center',
+  },
+  recordModalContent: {
+    flex: 1,
+    backgroundColor: '#fff',
+    marginTop: 60,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
+  recordModalImage: {
+    width: '100%',
+    height: undefined,
+    minHeight: 250,
+    maxHeight: 450,
+    aspectRatio: 1,
+    resizeMode: 'contain',
+    backgroundColor: '#000',
+  },
+  recordModalClose: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  recordModalBody: {
+    padding: 20,
+  },
+  recordModalTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#111',
+    marginBottom: 4,
+  },
+  recordModalScientific: {
+    fontSize: 15,
+    fontStyle: 'italic',
+    color: '#2e7d32',
+    marginBottom: 12,
+  },
+  recordModalDesc: {
+    fontSize: 14,
+    color: '#555',
+    lineHeight: 22,
+    marginBottom: 16,
+  },
+  recordModalMeta: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  recordMetaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  recordMetaText: {
+    fontSize: 13,
+    color: '#444',
+  },
+  enrichedCard: {
+    padding: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  enrichedTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    marginBottom: 6,
+  },
+  enrichedText: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  metaTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
   emptyText: { 
     color: '#999', 
     marginTop: 8 
   },
   postsListContainer: { 
     paddingHorizontal: 16, 
-    paddingTop: 16 
+    paddingTop: 16,
+    ...(Platform.OS === 'web' ? { maxWidth: 600, alignSelf: 'center' as const, width: '100%' as any } : {}),
   },
   postCard: { 
     backgroundColor: '#f9f9f9', 
     padding: 16, 
-    borderRadius: 12, 
+    borderRadius: 16, 
     marginBottom: 12, 
     borderWidth: 1, 
-    borderColor: '#eee' 
+    borderColor: '#eee',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   postCardHeader: { 
     flexDirection: 'row', 

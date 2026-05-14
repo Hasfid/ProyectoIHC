@@ -100,11 +100,13 @@ export default function Map({
   registrationLayout: _registrationLayout,
   initialRegion,
   onHelpPress: _onHelpPress,
+  onMarkerSelect,
 }: {
   onRegionChangeComplete?: (region: any) => void;
   registrationLayout?: boolean;
   initialRegion?: any;
   onHelpPress?: () => void;
+  onMarkerSelect?: (record: any | null) => void;
 }) {
   const [records, setRecords] = useState<any[]>([]);
   const [selected, setSelected] = useState<any | null>(null);
@@ -274,10 +276,28 @@ export default function Map({
   }, []);
 
   const handleMarkerPress = (record: any) => {
-    setSelected(record);
+    // Zoom hacia el marcador
+    const lat = record._renderLat ?? parseFloat(record.latitud);
+    const lng = record._renderLng ?? parseFloat(record.longitud);
+    if (mapRef.current && !isNaN(lat) && !isNaN(lng)) {
+      mapRef.current.animateToRegion(
+        { latitude: lat, longitude: lng, latitudeDelta: 0.005, longitudeDelta: 0.005 },
+        600
+      );
+    }
+    if (Platform.OS === 'web' && onMarkerSelect) {
+      onMarkerSelect(record);
+    } else {
+      setSelected(record);
+    }
   };
 
-  const closeCard = () => setSelected(null);
+  const closeCard = () => {
+    setSelected(null);
+    if (Platform.OS === 'web' && onMarkerSelect) {
+      onMarkerSelect(null);
+    }
+  };
 
   return (
     <View style={StyleSheet.absoluteFill}>
@@ -286,7 +306,7 @@ export default function Map({
         style={{ width: SCREEN_W, height: SCREEN_H }}
         initialRegion={initialRegion || INITIAL_REGION}
         mapType="hybrid"
-        maxZoomLevel={18}
+        maxZoomLevel={20}
         minZoomLevel={3}
         onRegionChangeComplete={(region) => {
           setCurrentRegion(region);
@@ -327,21 +347,21 @@ export default function Map({
               key={record.id}
               coordinate={{ latitude: lat, longitude: lng }}
               onPress={() => handleMarkerPress(record)}
+              anchor={{ x: 0.5, y: 1 }}
             >
               <View style={s.pin}>
-                <View style={s.pinGlow}>
-                  <View style={s.pinCircle}>
-                    {record.media_url ? (
-                      <Image
-                        source={{ uri: record.media_url }}
-                        style={s.pinImage}
-                        resizeMode="cover"
-                      />
-                    ) : (
-                      <Ionicons name="leaf" size={22} color="#34d399" />
-                    )}
-                  </View>
+                <View style={s.pinCircle}>
+                  {record.media_url ? (
+                    <Image
+                      source={{ uri: record.media_url }}
+                      style={s.pinImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Ionicons name="leaf" size={22} color="#34d399" />
+                  )}
                 </View>
+                <View style={s.pinTail} />
               </View>
             </Marker>
           );
@@ -407,7 +427,7 @@ export default function Map({
         )}
       </View>
 
-      {selected && (
+      {selected && Platform.OS !== 'web' && (
         <View style={s.cardWrapper} pointerEvents="box-none">
           <View style={s.card}>
             <TouchableOpacity style={s.cardClose} onPress={closeCard}>
@@ -544,35 +564,15 @@ const s = StyleSheet.create({
 
   pin: {
     alignItems: 'center',
-    width: 64,
-    height: 64,
-  },
-  pinGlow: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(52, 211, 153, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#34d399',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 12,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
+    width: 52,
   },
   pinCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     borderWidth: 3,
     borderColor: '#ffffff',
-    backgroundColor: '#000',
+    backgroundColor: '#1a2e1a',
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
@@ -587,6 +587,17 @@ const s = StyleSheet.create({
         elevation: 8,
       },
     }),
+  },
+  pinTail: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 8,
+    borderTopWidth: 12,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#ffffff',
+    marginTop: -2,
   },
   pinImage: {
     width: '100%',

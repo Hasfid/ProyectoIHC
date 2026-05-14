@@ -6,66 +6,41 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
 import * as ImagePicker from 'expo-image-picker';
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Platform, StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
+import { useRouter } from 'expo-router';
+import React, { useState } from 'react';
+import { Image, Platform, StyleSheet, Text, TouchableOpacity, View, ScrollView } from 'react-native';
 import Map from '../../components/Map';
 import WeatherWidget from '../../components/WeatherWidget';
 import { i18n } from '../../lib/i18n';
 import { supabase } from '../../lib/supabase';
 import { useTheme } from '../../lib/theme';
 
+const getCategoryInfo = (item: any) => {
+  const n = (item.nombre_tradicional || '').toLowerCase();
+  if (n.includes('jaguar') || n.includes('tigre') || n.includes('chigüire') || n.includes('capibara') || n.includes('mono') || n.includes('oso') || n.includes('tonina') || n.includes('delfín'))
+    return { icon: 'paw' as const, color: '#ff9100', label: '🐾 Mamífero' };
+  if (n.includes('guacamaya') || n.includes('loro') || n.includes('ave') || n.includes('águila') || n.includes('tucán'))
+    return { icon: 'paw' as const, color: '#00b0ff', label: '🐦 Ave' };
+  if (n.includes('rana') || n.includes('sapo') || n.includes('serpiente') || n.includes('iguana') || n.includes('caimán'))
+    return { icon: 'bug-outline' as const, color: '#ff5252', label: '🦎 Reptil/Anfibio' };
+  if (n.includes('orquídea') || n.includes('flor') || n.includes('árbol') || n.includes('planta') || n.includes('helecho'))
+    return { icon: 'leaf' as const, color: '#00e676', label: '🌿 Flora' };
+  return { icon: 'leaf' as const, color: '#00e676', label: '🌿 Especie' };
+};
+
+const formatDate = (d: string) => {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('es-VE', { day: 'numeric', month: 'short', year: 'numeric' }); }
+  catch { return ''; }
+};
+
 export default function DiscoverScreen() {
   const router = useRouter();
-  const [unreadMessages, setUnreadMessages] = useState(0);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [helpMenuOpen, setHelpMenuOpen] = useState(false);
-
-  const fetchUnreadMessages = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      const uid = session.user.id;
-
-      const { data: messages, error } = await supabase
-        .from('mensajes')
-        .select('id, remitente_id, created_at')
-        .eq('destinatario_id', uid)
-        .order('created_at', { ascending: false });
-
-      if (error || !messages) return;
-
-      const lastReadRaw = await AsyncStorage.getItem(`last_read_${uid}`);
-      const lastRead = lastReadRaw ? JSON.parse(lastReadRaw) : {};
-
-      let total = 0;
-      messages.forEach(msg => {
-        const senderId = msg.remitente_id;
-        const lastReadTime = lastRead[senderId];
-        if (!lastReadTime || new Date(msg.created_at) > new Date(lastReadTime)) {
-          total++;
-        }
-      });
-
-      setUnreadMessages(total);
-    } catch (err) {
-      console.error('fetchUnreadMessages (discover):', err);
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchUnreadMessages();
-    }, [])
-  );
-
-  useEffect(() => {
-    const interval = setInterval(fetchUnreadMessages, 10_000);
-    return () => clearInterval(interval);
-  }, []);
+  const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
 
   const { theme } = useTheme();
 
@@ -90,24 +65,30 @@ export default function DiscoverScreen() {
     });
   };
 
+  const handleMarkerSelect = (record: any | null) => {
+    setSelectedRecord(record);
+    // Close help menu when a pin is selected to avoid overlapping panels
+    if (record) setHelpMenuOpen(false);
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
 
-      <Map />
+      <Map onMarkerSelect={handleMarkerSelect} />
 
       <WeatherWidget />
 
       {/* Menú Hamburguesa de ayuda - Web: esquina superior derecha */}
       {Platform.OS === 'web' && (
         <View style={styles.webHelpContainer}>
-          <TouchableOpacity style={[styles.helpButtonWeb, { backgroundColor: theme.overlay }]} onPress={() => setHelpMenuOpen(!helpMenuOpen)}>
+          <TouchableOpacity style={[styles.helpButtonWeb, { backgroundColor: theme.overlay }]} onPress={() => { setHelpMenuOpen(!helpMenuOpen); if (!helpMenuOpen) setSelectedRecord(null); }}>
             <Ionicons name={helpMenuOpen ? "close" : "help-circle"} size={24} color={theme.primary} />
           </TouchableOpacity>
         </View>
       )}
 
       {/* Panel lateral derecho de ayuda */}
-      {Platform.OS === 'web' && helpMenuOpen && (
+      {Platform.OS === 'web' && helpMenuOpen && !selectedRecord && (
         <View style={[styles.sideRibbonMenu, { backgroundColor: theme.surface, borderLeftColor: theme.border }]}>
           <View style={{ height: 40, justifyContent: 'center', marginBottom: 20 }}>
             <Text style={[styles.hamburgerTitle, { color: theme.text, marginBottom: 0 }]}>{i18n.t('help.title')}</Text>
@@ -147,6 +128,154 @@ export default function DiscoverScreen() {
                 <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{i18n.t('help.missionDesc')}</Text>
               </View>
             </View>
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Panel lateral derecho de información del registro seleccionado */}
+      {Platform.OS === 'web' && selectedRecord && (
+        <View style={[styles.sideRibbonMenu, { backgroundColor: theme.surface, borderLeftColor: theme.border, zIndex: 1001 }]}>
+         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <Text style={[styles.hamburgerTitle, { color: theme.text, marginBottom: 0, flex: 1 }]} numberOfLines={1}>
+              {(selectedRecord.nombre_tradicional || i18n.t('discover.speciesDefault')).toUpperCase()}
+            </Text>
+            <TouchableOpacity
+              onPress={() => setSelectedRecord(null)}
+              style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: theme.primary + '18', justifyContent: 'center', alignItems: 'center' }}
+            >
+              <Ionicons name="close" size={18} color={theme.primary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+            {/* Nombre científico */}
+            {selectedRecord.nombre_cientifico ? (
+              <Text style={{ fontSize: 13, fontStyle: 'italic', color: theme.primary, marginBottom: 12 }}>
+                {selectedRecord.nombre_cientifico}
+              </Text>
+            ) : null}
+
+            {/* Imagen */}
+            {selectedRecord.media_url ? (
+              <View style={styles.recordImageWrap}>
+                <Image source={{ uri: selectedRecord.media_url }} style={styles.recordImage} resizeMode="cover" />
+                <View style={styles.recordCategoryBadge}>
+                  <Text style={styles.recordCategoryText}>{getCategoryInfo(selectedRecord).label}</Text>
+                </View>
+              </View>
+            ) : (
+              <View style={[styles.recordImageWrap, { backgroundColor: theme.primary + '12', justifyContent: 'center', alignItems: 'center' }]}>
+                <Ionicons name="image-outline" size={48} color={theme.primary} />
+                <Text style={{ fontSize: 12, color: theme.subtext, marginTop: 8 }}>{i18n.t('discover.noImage')}</Text>
+              </View>
+            )}
+
+            {/* Stats Row */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              <View style={[styles.recordStatBox, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                <Ionicons name="warning-outline" size={16} color={theme.primary} />
+                <Text style={{ fontSize: 10, color: theme.muted, fontWeight: '600', marginTop: 4 }}>{i18n.t('discover.dangerLevel')}</Text>
+                <Text style={{ fontSize: 12, color: theme.text, fontWeight: '500' }}>{selectedRecord.peligrosidad || i18n.t('discover.notAvailable')}</Text>
+              </View>
+              <View style={[styles.recordStatBox, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
+                <Ionicons name="earth-outline" size={16} color={theme.primary} />
+                <Text style={{ fontSize: 10, color: theme.muted, fontWeight: '600', marginTop: 4 }}>{i18n.t('discover.feeding')}</Text>
+                <Text style={{ fontSize: 12, color: theme.text, fontWeight: '500' }}>{selectedRecord.alimentacion || i18n.t('discover.notAvailable')}</Text>
+              </View>
+            </View>
+
+            {/* Notas del avistamiento */}
+            {selectedRecord.descripcion ? (
+              <View style={styles.hamburgerItem}>
+                <Ionicons name="document-text-outline" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.sightingNotes')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{selectedRecord.descripcion}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Coordenadas */}
+            <View style={styles.hamburgerItem}>
+              <Ionicons name="location-outline" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+              <View style={{ flex: 1, marginLeft: 10 }}>
+                <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.location')}</Text>
+                <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>
+                  Lat: {parseFloat(selectedRecord.latitud).toFixed(4)}  ·  Lng: {parseFloat(selectedRecord.longitud).toFixed(4)}
+                </Text>
+              </View>
+            </View>
+
+            {/* Fecha */}
+            {selectedRecord.created_at ? (
+              <View style={styles.hamburgerItem}>
+                <Ionicons name="calendar-outline" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.registrationDate')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{formatDate(selectedRecord.created_at)}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Hábitat */}
+            {selectedRecord.habitat ? (
+              <View style={styles.hamburgerItem}>
+                <Ionicons name="earth-outline" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.habitat')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{selectedRecord.habitat}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Nivel de riesgo */}
+            {selectedRecord.nivel_riesgo ? (
+              <View style={styles.hamburgerItem}>
+                <Ionicons name="warning-outline" size={18} color="#ff9100" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.riskLevel')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{selectedRecord.nivel_riesgo}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Datos enriquecidos IA — Descripción biológica */}
+            {selectedRecord.metadatos_especie?.descripcion_biologica ? (
+              <View style={[styles.hamburgerItem, { marginTop: 4 }]}>
+                <Ionicons name="leaf-outline" size={18} color="#00e676" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.bioDescription')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{selectedRecord.metadatos_especie.descripcion_biologica}</Text>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Datos enriquecidos IA — Curiosidades */}
+            {selectedRecord.metadatos_especie?.curiosidades?.length > 0 ? (
+              <View style={[styles.hamburgerItem, { marginTop: 4 }]}>
+                <Ionicons name="search-outline" size={18} color={theme.primary} style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.curiosities')}</Text>
+                  {selectedRecord.metadatos_especie.curiosidades.map((c: string, i: number) => (
+                    <View key={i} style={{ flexDirection: 'row', marginTop: 4 }}>
+                      <Text style={{ color: theme.primary, marginRight: 6 }}>•</Text>
+                      <Text style={[styles.hamburgerItemDesc, { color: theme.subtext, flex: 1 }]}>{c}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : null}
+
+            {/* Datos enriquecidos IA — Mitos y leyendas */}
+            {selectedRecord.metadatos_especie?.mitos ? (
+              <View style={[styles.hamburgerItem, { marginTop: 4 }]}>
+                <Ionicons name="book-outline" size={18} color="#ff9100" style={{ marginTop: 2 }} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={[styles.hamburgerItemTitle, { color: theme.text }]}>{i18n.t('discover.mythsAndLegends')}</Text>
+                  <Text style={[styles.hamburgerItemDesc, { color: theme.subtext }]}>{selectedRecord.metadatos_especie.mitos}</Text>
+                </View>
+              </View>
+            ) : null}
           </ScrollView>
         </View>
       )}
@@ -192,22 +321,18 @@ export default function DiscoverScreen() {
 
       {Platform.OS !== 'web' && (
         <View style={styles.floatingButtonContainer}>
-          {/* Botón de ayuda arriba del chat */}
+          {/* Botón de ayuda */}
           <TouchableOpacity style={styles.helpButton} onPress={() => router.push('/help')}>
             <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}>
               <Ionicons name="help-circle" size={28} color={theme.primary} />
             </BlurView>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/chat')}>
+          {/* Botón de escáner (principal) */}
+          <TouchableOpacity style={styles.floatingButton} onPress={() => router.push('/(tabs)/scanner')}>
             <BlurView intensity={90} tint={theme.mode === 'dark' ? 'dark' : 'light'} style={[styles.blurContainer, { backgroundColor: theme.overlay }]}>
-              <Ionicons name="chatbubbles" size={28} color={theme.primary} style={styles.icon} />
+              <Ionicons name="scan" size={28} color={theme.primary} />
             </BlurView>
           </TouchableOpacity>
-          {unreadMessages > 0 && (
-            <View style={[styles.chatBadge, { borderColor: theme.background }]}>
-              <Text style={styles.chatBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
-            </View>
-          )}
         </View>
       )}
     </View>
@@ -391,5 +516,41 @@ const styles = StyleSheet.create({
   scannerCancelText: {
     fontSize: 13,
     marginTop: 2,
+  },
+  // Record info side panel styles
+  recordImageWrap: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 14,
+    position: 'relative',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)',
+  },
+  recordImage: {
+    width: '100%',
+    height: '100%',
+  },
+  recordCategoryBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  recordCategoryText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  recordStatBox: {
+    flex: 1,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    alignItems: 'flex-start',
   },
 });

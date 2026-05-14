@@ -70,7 +70,7 @@ Estructura del JSON obligatorio:
   ]
 }`;
 
-    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    const apiKey = 'AIzaSyBBkq53QhwbS_jQk8hhVWVzQqxISpF-E9I';
     if (!apiKey) {
       throw new Error("Missing GEMINI_API_KEY en variables de entorno de Supabase.");
     }
