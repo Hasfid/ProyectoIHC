@@ -19,6 +19,7 @@ Por lo tanto, existe la posibilidad de que vaya lento, haya cierres inesperados 
 * Escáner(IA): Captura de imágenes para clasificación de especies. Si el usuario está offline en campo, la data se guarda en caché local y se sincroniza después.
 * Observatorio/Comunidad:  Una sección para ver transmisiones en vivo o video pregrabados de habitats de animales dificiles de acceder o de locaciones, junto a ella está el apartado de comunidad donde los usuarios pueden interactuar entre si.
 * Registros: Zona para visualizar todos los registros de las especies registradas por los usuarios.
+* Perfil: Una sección donde el usuario puede configurar su perfil, enviar mensajes a otros usuarios y observar sus registros y cargar pendientes.
 
 
 ## Desarrolladores
