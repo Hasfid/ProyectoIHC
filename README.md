@@ -21,10 +21,10 @@ Actualmente el proyecto está en fase de desarrollo y corre sobre capas gratuita
 * **Comunidad / Observatorio:** Un feed para el catálogo de especies registradas y acceso a streams de video de la zona.
 
 
-### Desarrolladores
+## Desarrolladores
 
-- Diego Caballero.
-- Sodyl Abreu.
-- Bárbara Garcia.
-- Nathaly Rodriguez.
-- Dubraska Rodriguez.
+* Diego Caballero.
+* Sodyl Abreu.
+* Bárbara Garcia.
+* Nathaly Rodriguez.
+* Dubraska Rodriguez.
