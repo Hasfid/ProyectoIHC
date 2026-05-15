@@ -1,50 +1,30 @@
-# Welcome to your Expo app 👋
+# ECOS - Observatorio de la Guayana Venezolana 🍃
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+> **Nota:** Este es un proyecto académico desarrollado para la **UCAB**.
 
-## Get started
+ECOS es una aplicación (móvil y web) construida para explorar y registrar la biodiversidad de nuestra región. Más allá de ser solo una herramienta de documentación técnica, el objetivo principal del proyecto es **conectar a las personas con la naturaleza a través del conocimiento**. La lógica es simple: si la gente entiende lo que está viendo, es mucho más probable que lo valore y lo cuide. 
 
-1. Install dependencies
 
-   ```bash
-   npm install
-   ```
+## ⚠️ Stack y Estado de la Infraestructura
 
-2. Start the app
+Actualmente el proyecto está en fase de desarrollo y corre sobre capas gratuitas (*Free Tier*). Ten esto en cuenta al momento de probar o evaluar la app:
 
-   ```bash
-   npx expo start
-   ```
+* **Backend / Base de Datos:** Usamos **Supabase** (PostgreSQL, Auth y Storage) en su plan gratuito.
+* **APIs de IA:** El escáner de especies se alimenta de servicios de terceros con límites de peticiones mensuales.
+* **Disponibilidad:** Es posible que experimentes *timeouts* o errores 500 si la base de datos entra en pausa por inactividad o si quemamos la cuota de la API de identificación.
 
-In the output, you'll find options to open the app in a
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## ⚙️ Módulos Principales
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+* **Mapa / Descubrir:** Renderizado de puntos de avistamiento basados en coordenadas GPS, integrado con datos del clima.
+* **Escáner (IA):** Captura de imágenes para clasificación de especies. Si el usuario está *offline* en campo, la data se guarda en caché local y se sincroniza después.
+* **Comunidad / Observatorio:** Un feed para el catálogo de especies registradas y acceso a streams de video de la zona.
 
-## Get a fresh project
 
-When you're ready, run:
+## Desarrolladores
 
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+* Diego Caballero.
+* Sodyl Abreu.
+* Bárbara Garcia.
+* Nathaly Rodriguez.
+* Dubraska Rodriguez.
