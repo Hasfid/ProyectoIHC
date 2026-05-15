@@ -350,12 +350,12 @@ export default function ProfileScreen() {
       const result = await syncDrafts();
       await loadOfflineDrafts();
       if (result.uploaded > 0 || result.identified > 0) {
-        Alert.alert('📡 Sincronizado', `${result.uploaded} subido(s), ${result.identified} identificado(s).`);
+        Alert.alert('📡 ' + i18n.t('profile.speciesConfirmed'), i18n.t('profile.syncSuccess').replace('{{uploaded}}', String(result.uploaded)).replace('{{identified}}', String(result.identified)));
       } else if (result.failed > 0) {
-        Alert.alert('Sin conexión', 'No se pudo sincronizar. Verificá tu conexión a internet.');
+        Alert.alert(i18n.t('profile.attention'), i18n.t('profile.syncNoConnection'));
       }
     } catch {
-      Alert.alert('Error', 'No se pudo reintentar la sincronización.');
+      Alert.alert('Error', i18n.t('profile.syncRetryError'));
     } finally {
       setRetryingId(null);
     }
@@ -384,10 +384,10 @@ export default function ProfileScreen() {
       setSelectingDraft(null);
       // Intentar sync automático
       syncDrafts();
-      Alert.alert('Especie confirmada', 'El registro está listo para subir.');
+      Alert.alert(i18n.t('profile.speciesConfirmed'), i18n.t('profile.speciesConfirmedMsg'));
     } catch (e) {
       console.error(e);
-      Alert.alert('Error', 'No se pudo guardar la selección.');
+      Alert.alert('Error', i18n.t('profile.speciesConfirmError'));
     } finally {
       setIsSubmitting(false);
     }
@@ -541,19 +541,16 @@ export default function ProfileScreen() {
   const [editRecordDesc, setEditRecordDesc] = useState('');
 
   const handleDeleteRecord = (recordId: string) => {
-    console.log('handleDeleteRecord called for ID:', recordId);
     Alert.alert(
-      'Eliminar registro',
-      '¿Estás seguro de que quieres eliminar este registro permanentemente?',
+      i18n.t('profile.deleteRecord'),
+      i18n.t('profile.deleteRecordConfirm'),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: i18n.t('common.cancel'), style: 'cancel' },
         {
-          text: 'Eliminar',
+          text: i18n.t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
-              console.log('Attempting to delete from Supabase for ID:', recordId);
-              // Usamos count: 'exact' para ver si realmente se borró algo
               const { error, count } = await supabase
                 .from('registros')
                 .delete({ count: 'exact' })
@@ -564,27 +561,24 @@ export default function ProfileScreen() {
                 throw error;
               }
 
-              console.log('Rows affected:', count);
-
               if (count === 0) {
                 Alert.alert(
-                  'Atención', 
-                  'El registro no se borró de la base de datos. Esto suele pasar por falta de permisos (RLS) o porque el registro ya no existe.'
+                  i18n.t('profile.attention'), 
+                  i18n.t('profile.deleteRecordRLS')
                 );
                 return;
               }
 
-              console.log('Delete success!');
               setSelectedRecord(null);
               
               if (session?.user?.id) {
                 await fetchUserRecords(session.user.id);
                 await fetchStats(session.user.id);
               }
-              Alert.alert('Éxito', 'El registro ha sido eliminado correctamente.');
+              Alert.alert('✅', i18n.t('profile.deleteRecordSuccess'));
             } catch (err: any) {
               console.error('Detailed delete error:', err);
-              Alert.alert('Error', 'No se pudo eliminar: ' + (err.message || 'Error desconocido'));
+              Alert.alert('Error', i18n.t('profile.deleteRecordError') + (err.message || 'Error'));
             }
           },
         },
@@ -615,7 +609,7 @@ export default function ProfileScreen() {
       }
     } catch (err) {
       console.error('Error updating record:', err);
-      Alert.alert('Error', 'No se pudo actualizar la descripción.');
+      Alert.alert('Error', i18n.t('profile.descriptionUpdateError'));
     }
   };
 
@@ -679,7 +673,7 @@ export default function ProfileScreen() {
       fetchPostComments(postId);
     } catch (err) {
       console.error('Error adding comment:', err);
-      Alert.alert('Error', 'No se pudo enviar el comentario.');
+      Alert.alert('Error', i18n.t('profile.commentError'));
     } finally {
       setProfileSubmittingComment(null);
     }
@@ -733,12 +727,12 @@ export default function ProfileScreen() {
 
   const handleDeletePost = (postId: string) => {
     Alert.alert(
-      'Eliminar publicación',
-      '¿Estás seguro de que quieres eliminar esta publicación?',
+      i18n.t('profile.deletePostTitle'),
+      i18n.t('profile.deletePostMsg'),
       [
-        { text: 'Cancelar', style: 'cancel' },
+        { text: i18n.t('common.cancel'), style: 'cancel' },
         {
-          text: 'Eliminar',
+          text: i18n.t('common.delete'),
           style: 'destructive',
           onPress: async () => {
             try {
@@ -752,7 +746,7 @@ export default function ProfileScreen() {
               }
             } catch (err) {
               console.error('Error deleting post:', err);
-              Alert.alert('Error', 'No se pudo eliminar la publicación.');
+              Alert.alert('Error', i18n.t('profile.deletePostError'));
             }
           },
         },
@@ -790,7 +784,7 @@ export default function ProfileScreen() {
   /** Sube nueva foto (si aplica) y actualiza metadatos en la tabla `perfiles` */
   const saveProfile = async () => {
     if (!editUsername) {
-      setUsernameError('El nombre de usuario no puede estar vacío');
+      setUsernameError(i18n.t('profile.usernameEmpty'));
       return;
     }
 
@@ -807,7 +801,7 @@ export default function ProfileScreen() {
           .maybeSingle();
 
         if (existingUser && existingUser.id !== session?.user.id) {
-          setUsernameError('Ese nombre de usuario ya está en uso');
+          setUsernameError(i18n.t('profile.usernameTaken'));
           setSaving(false);
           return;
         }
@@ -848,7 +842,7 @@ export default function ProfileScreen() {
       setIsEditing(false);
     } catch (err: any) {
       console.error('Save profile error:', err);
-      Alert.alert('Error', 'No se pudo actualizar el perfil: ' + (err?.message || JSON.stringify(err)));
+      Alert.alert('Error', i18n.t('profile.saveError') + (err?.message || JSON.stringify(err)));
     } finally {
       setSaving(false);
     }
@@ -1216,7 +1210,7 @@ export default function ProfileScreen() {
                       <View style={styles.commentInputRow}>
                         <TextInput
                           style={[styles.commentInputField, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }]}
-                          placeholder="Escribe un comentario..."
+                          placeholder={i18n.t('profile.commentPlaceholder')}
                           placeholderTextColor={theme.placeholder}
                           value={profileCommentInputs[post.id] || ''}
                           onChangeText={(v) => setProfileCommentInputs(prev => ({ ...prev, [post.id]: v }))}
@@ -1265,14 +1259,14 @@ export default function ProfileScreen() {
                     {/* Descripción editable únicamente */}
                     {editingRecord?.id === selectedRecord.id ? (
                       <View style={{ marginVertical: 8 }}>
-                        <Text style={[styles.label, { color: theme.subtext }]}>Editar Descripción</Text>
+                        <Text style={[styles.label, { color: theme.subtext }]}>{i18n.t('profile.editDescription')}</Text>
                         <TextInput
                           style={[styles.editRecordInput, { backgroundColor: theme.inputBackground, borderColor: theme.border, color: theme.text }]}
                           value={editRecordDesc}
                           onChangeText={setEditRecordDesc}
                           multiline
                           numberOfLines={4}
-                          placeholder="Escribe una descripción..."
+                          placeholder={i18n.t('profile.descriptionWritePlaceholder')}
                           placeholderTextColor={theme.placeholder}
                         />
                         
@@ -1281,13 +1275,13 @@ export default function ProfileScreen() {
                             style={[styles.editRecordCancelBtn, { backgroundColor: theme.inputBackground }]}
                             onPress={() => setEditingRecord(null)}
                           >
-                            <Text style={[styles.editRecordCancelText, { color: theme.subtext }]}>Cancelar</Text>
+                            <Text style={[styles.editRecordCancelText, { color: theme.subtext }]}>{i18n.t('common.cancel')}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.editRecordSaveBtn}
                             onPress={handleSaveRecordEdit}
                           >
-                            <Text style={styles.editRecordSaveText}>Guardar</Text>
+                            <Text style={styles.editRecordSaveText}>{i18n.t('common.save')}</Text>
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -1312,13 +1306,13 @@ export default function ProfileScreen() {
                           <View style={{ marginTop: 10, gap: 12 }}>
                             {enrichedData.descripcion_biologica ? (
                               <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
-                                <Text style={[styles.enrichedTitle, { color: theme.primary }]}>Información Biológica</Text>
+                                <Text style={[styles.enrichedTitle, { color: theme.primary }]}>{i18n.t('profile.bioInfo')}</Text>
                                 <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.descripcion_biologica}</Text>
                               </View>
                             ) : null}
                             {enrichedData.mitos ? (
                               <View style={[styles.enrichedCard, { backgroundColor: theme.inputBackground, borderColor: theme.border }]}>
-                                <Text style={[styles.enrichedTitle, { color: '#ff9100' }]}>Mitos y Leyendas</Text>
+                                <Text style={[styles.enrichedTitle, { color: '#ff9100' }]}>{i18n.t('profile.mythsAndLegends')}</Text>
                                 <Text style={[styles.enrichedText, { color: theme.subtext }]}>{enrichedData.mitos}</Text>
                               </View>
                             ) : null}
@@ -1335,14 +1329,14 @@ export default function ProfileScreen() {
                             }}
                           >
                             <Ionicons name="pencil" size={16} color="#fff" />
-                            <Text style={styles.recordEditBtnText}>Editar nota</Text>
+                            <Text style={styles.recordEditBtnText}>{i18n.t('profile.editNote')}</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.recordDeleteBtn}
                             onPress={() => handleDeleteRecord(selectedRecord.id)}
                           >
                             <Ionicons name="trash" size={16} color="#fff" />
-                            <Text style={styles.recordDeleteBtnText}>Eliminar</Text>
+                            <Text style={styles.recordDeleteBtnText}>{i18n.t('common.delete')}</Text>
                           </TouchableOpacity>
                         </View>
                       </>
@@ -1362,11 +1356,11 @@ export default function ProfileScreen() {
         <View style={[styles.modalContainer, { backgroundColor: theme.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={() => setIsEditing(false)} disabled={saving}>
-              <Text style={[styles.modalCancelText, { color: theme.subtext }]}>Cancelar</Text>
+              <Text style={[styles.modalCancelText, { color: theme.subtext }]}>{i18n.t('common.cancel')}</Text>
             </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: theme.text }]}>Editar Perfil</Text>
+            <Text style={[styles.modalTitle, { color: theme.text }]}>{i18n.t('profile.editProfile')}</Text>
             <TouchableOpacity onPress={saveProfile} disabled={saving}>
-              {saving ? <ActivityIndicator size="small" color={theme.primary} /> : <Text style={styles.modalSaveText}>Guardar</Text>}
+              {saving ? <ActivityIndicator size="small" color={theme.primary} /> : <Text style={styles.modalSaveText}>{i18n.t('common.save')}</Text>}
             </TouchableOpacity>
           </View>
           <ScrollView contentContainerStyle={{ padding: 20 }}>
@@ -1378,11 +1372,11 @@ export default function ProfileScreen() {
               </View>
             )}
             <TouchableOpacity onPress={pickImage} style={styles.changePhotoButton}>
-              <Text style={styles.changePhotoText}>Cambiar foto</Text>
+              <Text style={styles.changePhotoText}>{i18n.t('profile.changePhoto')}</Text>
             </TouchableOpacity>
 
             {/* Editar Username */}
-            <Text style={[styles.label, { color: theme.subtext }]}>Nombre de usuario</Text>
+            <Text style={[styles.label, { color: theme.subtext }]}>{i18n.t('profile.usernameLabel')}</Text>
             <TextInput
               style={[styles.input, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }, usernameError ? styles.inputError : null]}
               value={editUsername}
@@ -1394,14 +1388,14 @@ export default function ProfileScreen() {
             {usernameError ? <Text style={styles.errorText}>{usernameError}</Text> : null}
 
             {/* Editar Descripción */}
-            <Text style={[styles.label, { color: theme.subtext }]}>Descripción</Text>
+            <Text style={[styles.label, { color: theme.subtext }]}>{i18n.t('profile.descriptionLabel')}</Text>
             <TextInput
               style={[styles.input, styles.textArea, { color: theme.text, borderColor: theme.border, backgroundColor: theme.inputBackground }]}
               value={editDescription}
               onChangeText={setEditDescription}
               multiline
               numberOfLines={4}
-              placeholder="Cuéntanos sobre ti..."
+              placeholder={i18n.t('profile.descriptionPlaceholder')}
               placeholderTextColor={theme.placeholder}
               editable={!saving}
             />
@@ -1462,14 +1456,14 @@ export default function ProfileScreen() {
             <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' }}>
               <View style={{ backgroundColor: theme.card, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: Dimensions.get('window').height * 0.85 }}>
                 <View style={{ padding: 20, borderBottomWidth: 1, borderColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text }}>Selecciona la Especie</Text>
+                  <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text }}>{i18n.t('profile.selectSpecies')}</Text>
                   <TouchableOpacity onPress={() => setSelectingDraft(null)}>
                     <Ionicons name="close" size={24} color={theme.subtext} />
                   </TouchableOpacity>
                 </View>
                 <ScrollView contentContainerStyle={{ padding: 20 }}>
                   <Image source={{ uri: selectingDraft.media_uri }} style={{ width: '100%', height: 200, borderRadius: 16, marginBottom: 20 }} />
-                  <Text style={{ fontSize: 16, color: theme.subtext, marginBottom: 12 }}>¿Cuál de estos identificaste?</Text>
+                  <Text style={{ fontSize: 16, color: theme.subtext, marginBottom: 12 }}>{i18n.t('profile.whichSpecies')}</Text>
                   
                   {((selectingDraft.metadatos_especie as any)?.all_candidates || []).map((cand: any, idx: number) => (
                     <TouchableOpacity 
@@ -1495,12 +1489,12 @@ export default function ProfileScreen() {
                         <Text style={{ fontSize: 16, fontWeight: 'bold', color: theme.text }}>{cand.nombreTradicional}</Text>
                         <Text style={{ fontSize: 14, color: theme.subtext, fontStyle: 'italic' }}>{cand.nombreCientifico}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 12 }}>
-                          <Text style={{ fontSize: 12, color: theme.primary }}>Certeza: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
+                          <Text style={{ fontSize: 12, color: theme.primary }}>{i18n.t('profile.certainty')}: {Math.round((cand.iaCerteza || 0) * 100)}%</Text>
                           {candidateCounts[cand.nombreCientifico] !== undefined && (
                             <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDarkMode ? 'rgba(52,211,153,0.15)' : '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 }}>
                               <Ionicons name="eye-outline" size={12} color={theme.primary} style={{ marginRight: 4 }} />
                               <Text style={{ fontSize: 11, color: theme.primary, fontWeight: 'bold' }}>
-                                {candidateCounts[cand.nombreCientifico]} {candidateCounts[cand.nombreCientifico] === 1 ? 'registro' : 'registros'}
+                                {candidateCounts[cand.nombreCientifico]} {candidateCounts[cand.nombreCientifico] === 1 ? i18n.t('profile.record') : i18n.t('profile.recordPlural')}
                               </Text>
                             </View>
                           )}

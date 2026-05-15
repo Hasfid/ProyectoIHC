@@ -1,3 +1,16 @@
+/**
+ * theme.ts — Sistema de temas (light/dark) para la plataforma Ecos.
+ *
+ * Implementa un patrón pub/sub manual para propagar cambios de tema
+ * a todos los componentes suscritos sin depender de Context de React
+ * (compatible con módulos fuera del árbol de componentes).
+ *
+ * Persiste la preferencia en AsyncStorage y aplica estilos al `<body>`
+ * en entornos web para evitar flashes de color durante la carga.
+ *
+ * @module lib/theme
+ */
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';

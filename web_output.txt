@@ -1,5 +1,0 @@
-Starting project at C:\ProyectoIHC
-React Compiler enabled
-Starting Metro Bundler
-Waiting on http://localhost:8081
-Logs for your project will appear below.

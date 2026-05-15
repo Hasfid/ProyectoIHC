@@ -61,8 +61,6 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      if (Platform.OS === 'web') console.log('[Login] Intentando entrar con:', email.trim());
-
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.toLowerCase().trim(),
         password: password,
@@ -70,8 +68,6 @@ export default function LoginScreen() {
 
       if (error) {
         setLoading(false);
-        if (Platform.OS === 'web') console.error('[Login] Error de Supabase:', error);
-
         if (error.message.includes('Invalid login credentials')) {
           Alert.alert('Error', 'Correo o contraseña incorrectos.');
         } else {
@@ -80,11 +76,9 @@ export default function LoginScreen() {
         return;
       }
 
-      if (Platform.OS === 'web') console.log('[Login] Éxito');
       router.replace('/(tabs)');
 
     } catch (err) {
-      if (Platform.OS === 'web') console.error('[Login] Error inesperado:', err);
       Alert.alert('Error', 'Ocurrió un problema de conexión.');
     } finally {
       setLoading(false);

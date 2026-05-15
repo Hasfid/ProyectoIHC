@@ -77,8 +77,6 @@ export default function RegisterScreen() {
     setLoading(true);
 
     try {
-      if (Platform.OS === 'web') console.log('[Register] Iniciando proceso para:', email.trim());
-
       const { data: existingUser, error: checkError } = await supabase
         .from('perfiles')
         .select('id')
@@ -86,7 +84,6 @@ export default function RegisterScreen() {
         .single();
 
       if (checkError && checkError.code !== 'PGRST116') {
-        if (Platform.OS === 'web') console.error('[Register] Error al verificar username:', checkError);
       }
 
       if (existingUser) {
@@ -108,19 +105,15 @@ export default function RegisterScreen() {
       });
 
       if (error) {
-        if (Platform.OS === 'web') console.error('[Register] Error de Supabase:', error);
         Alert.alert('Error al registrar', error.message);
       } else if (data.session) {
-        if (Platform.OS === 'web') console.log('[Register] Registro exitoso, sesión iniciada.');
       } else {
-        if (Platform.OS === 'web') console.log('[Register] Registro exitoso, esperando confirmación de email.');
         Alert.alert(
           'Revisa tu correo',
           'Hemos enviado un enlace de confirmación. Debes confirmar tu correo antes de poder iniciar sesión.'
         );
       }
     } catch (err) {
-      if (Platform.OS === 'web') console.error('[Register] Error inesperado:', err);
       Alert.alert('Error', 'Ocurrió un error inesperado al conectar con el servidor.');
     } finally {
       setLoading(false);
@@ -129,7 +122,6 @@ export default function RegisterScreen() {
 
   return (
     <View style={styles.container}>
-      {/* ── FONDO: Imagen FIJA (NUNCA SE MUEVE) ── */}
       <ImageBackground
         source={require('../assets/foto-cascada.png')}
         style={styles.backgroundImage}
@@ -148,7 +140,6 @@ export default function RegisterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo / Top Section */}
           <View style={styles.topSection}>
             <Image
               source={require('../assets/logo-ecos.png')}
@@ -158,7 +149,6 @@ export default function RegisterScreen() {
             <Text style={styles.subtitleText}>Únete a la red</Text>
           </View>
 
-          {/* Card BLANCA */}
           <View style={styles.card}>
             <Text style={styles.title}>Crear Cuenta</Text>
 
@@ -265,7 +255,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  /* ── Fondo FIJO (NUNCA SE MUEVE) ── */
   backgroundImage: {
     position: 'absolute',
     top: 0,
@@ -284,7 +273,6 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
 
-  /* ── Top logo section ── */
   topSection: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -307,7 +295,6 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
 
-  /* ── Card BLANCA ── */
   card: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,

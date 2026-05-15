@@ -76,13 +76,9 @@ export default function ObservatoryScreen() {
   const [publishing, setPublishing] = useState(false);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
-
-  console.log('Observatory Screen Render - Posts:', posts.length);
-
   /** Obtiene las publicaciones más recientes combinadas con los perfiles de autor */
   const fetchPosts = async () => {
     try {
-      console.log('fetchPosts started...');
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id || null;
       setCurrentUserId(uid);
@@ -145,7 +141,6 @@ export default function ObservatoryScreen() {
         likedByMe: likedByMe.has(post.id),
       }));
 
-      console.log('fetchPosts combined success, count:', combinedPosts.length);
       setPosts(combinedPosts as Post[]);
       return { posts: combinedPosts, uid };
 
@@ -160,7 +155,6 @@ export default function ObservatoryScreen() {
     const userIdToUse = uid || currentUserId;
     if (!userIdToUse) return;
     try {
-      console.log('fetchFollowingIds for:', userIdToUse);
       const ids = await getFollowingIds(userIdToUse);
       setFollowingIds(ids);
     } catch (err) {

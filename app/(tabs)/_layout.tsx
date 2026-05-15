@@ -64,7 +64,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
 
       <View style={webStyles.centerContainer}>
         {state.routes.map((route: any, index: number) => {
-          if (route.name === 'profile') return null;
+          if (route.name === 'profile' || route.name === 'scanner') return null;
 
           const { options } = descriptors[route.key];
           const isFocused = state.index === index;
@@ -139,7 +139,7 @@ const WebTopTabBar = ({ state, descriptors, navigation, unreadCount, unreadMessa
             <TouchableOpacity
               style={[
                 webStyles.iconBtn,
-                state.index === 4 && webStyles.iconBtnActive,
+                state.routes[state.index]?.name === 'profile' && webStyles.iconBtnActive,
                 { marginRight: 8, backgroundColor: theme.mode === 'dark' ? '#111924' : '#f0f2f5', borderColor: theme.border },
                 isSmallScreen && { width: 32, height: 32 }
               ]}
@@ -452,13 +452,15 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "earth" : "earth-outline"} size={24} color={color} />,
         }}
       />
-      <MaterialTopTabs.Screen
-        name="scanner"
-        options={{
-          title: i18n.t('tabs.scanner'),
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
-        }}
-      />
+      {Platform.OS !== 'web' && (
+        <MaterialTopTabs.Screen
+          name="scanner"
+          options={{
+            title: i18n.t('tabs.scanner'),
+            tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => <Ionicons name={focused ? "scan-circle" : "scan-circle-outline"} size={24} color={color} />,
+          }}
+        />
+      )}
       <MaterialTopTabs.Screen
         name="records"
         options={{

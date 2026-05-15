@@ -130,7 +130,7 @@ export default function CreateRecordScreen() {
         router.back();
       }, 1000);
     } catch {
-      Alert.alert('Error', 'No se pudo guardar el registro.');
+      Alert.alert(i18n.t('notifications.errorSaveTitle'), i18n.t('notifications.errorSaveMessage'));
       setSaving(false);
     }
   };
@@ -249,7 +249,7 @@ export default function CreateRecordScreen() {
 
         {/* Header flotante */}
         <View style={[s.mapTopBar, { backgroundColor: theme.surface }]}> 
-          <TouchableOpacity onPress={cancelRegistration} style={[s.mapBackBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
+          <TouchableOpacity onPress={() => setStep('media')} style={[s.mapBackBtn, { backgroundColor: theme.surface, borderColor: theme.border, borderWidth: 1 }]}>
             <Ionicons name="arrow-back" size={22} color={theme.text} />
           </TouchableOpacity>
           <Text style={[s.mapTopTitle, { color: theme.text }]}>{i18n.t('createRecord.mapTitle')}</Text>

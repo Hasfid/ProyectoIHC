@@ -10,7 +10,7 @@
 
 import { SPECIES_LIST } from './speciesList';
 
-const GEMINI_API_KEY = 'AIzaSyAOYBZRskY8hIC1WiBPo9hswxICHZsQKbM';
+const GEMINI_API_KEY = 'AIzaSyBkf1qBtyrXQNTdwITm8D7OFt3bQk-fVCM';
 
 /** Candidato de especie retornado por la IA */
 export interface SpeciesCandidate {

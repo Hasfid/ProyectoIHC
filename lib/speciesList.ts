@@ -1,3 +1,13 @@
+/**
+ * speciesList.ts — Catálogo oficial de especies de la Guayana venezolana.
+ *
+ * Lista estática de fauna y flora conocida en la región, inyectada en
+ * el prompt de Gemini para mejorar la precisión de identificación.
+ * Cada entrada contiene el nombre común venezolano y el binomio científico.
+ *
+ * @module lib/speciesList
+ */
+
 export const SPECIES_LIST = [
   { nombre_comun: 'Sapito Minero', nombre_cientifico: 'Dendrobates leucomelas' },
   { nombre_comun: 'Águila Arpía', nombre_cientifico: 'Harpia harpyja' },
