@@ -1,6 +1,19 @@
-# ¡Bienvenido a nuestro repositorio de ECOS! 👋🍃
+# ¡Bienvenido al repositorio de ECOS! 👋🍃
+
+> **🎓 Nota Académica:** ECOS es un proyecto desarrollado como parte de las actividades académicas para la **Universidad Católica Andrés Bello (UCAB)**.
 
 **ECOS** es una aplicación móvil y plataforma web diseñada para explorar, registrar y proteger la biodiversidad de la **Guayana Venezolana**. Funciona como una comunidad colaborativa donde locales, turistas y expertos comparten hallazgos para preservar el ecosistema regional.
+
+---
+
+## ⚠️ Aviso de Infraestructura (Posibles Caídas)
+
+Al ser un proyecto universitario en fase de desarrollo, ECOS está sostenido sobre servicios en la nube en sus modalidades gratuitas (*Free Tier*). Por favor, ten en cuenta lo siguiente al probar o utilizar la aplicación:
+
+* **Base de Datos:** Toda nuestra información, autenticación y almacenamiento están gestionados mediante **Supabase** (Plan Gratuito).
+* **APIs y Servicios:** Las integraciones externas (como los servicios del escáner de identificación) utilizan APIs con límites de uso mensuales.
+
+**Importante:** Debido a las restricciones de estos planes gratuitos, **es posible que la aplicación experimente caídas, tiempos de inactividad, o errores de conexión** si el servidor entra en pausa por inactividad o si se supera la cuota máxima de peticiones.
 
 ---
 
@@ -22,7 +35,7 @@ ECOS busca mostrar al mundo la increíble riqueza de la región, dándole a cual
 
 ---
 
-## 🚀 Guía de Inicio (Expo)
+## 🚀 Guía de Inicio Local (Expo)
 
 Este proyecto está creado con [Expo](https://expo.dev) utilizando [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
 
